@@ -1,0 +1,2474 @@
+## Title :optim thread
+## Time : 2026-02-17 12:19:56
+
+
+def gripper_prise_vide():
+    global System_Pos_Homej
+    global System_Pos_Homex
+    global System_01E02
+    global System_Hauteur_Z
+    global System_Mesure_Pile_V
+    global System_Mesure_Pile_P
+    global System_TE_Prise
+    global System_Step_Test
+    global System_HZ
+    global System_EV
+    global System_OR
+    global System_PLC_OUT_Echo_code_Cycle
+    global System_PLC_OUT_Echo_code_Pos
+    global System_PLC_OUT_Att_Cycle_code
+    global System_PLC_OUT_Error_code
+    global System_PLC_OUT_Step_Number
+    global System_PLC_OUT_Life_Int
+    global System_PLC_OUT_Cycle_End
+    global System_PLC_IN_Cycle_code
+    global System_PLC_IN_Position_code
+    global System_PLC_IN_Life_Int
+    global System_PLC_IN_Start_Cycle
+    global System_I_Vacc_General
+    global System_I_Vacc_Circuit1
+    global System_I_Vacc_Circuit2
+    global System_I_Vacc_Circuit3
+    global System_I_Err_Laser
+    global System_PLC_IN_Ack
+    global System_PLC_IN_TE_Recal_Pile_V
+    global System_Vitesse_Max
+    global System_Ctrl_Circuits_Num
+    global System_Ctrl_Circuits_OK
+    global System_PLC_IN_RAZ_TE_Ctrl
+    global System_Hauteur_Pile_Select
+    # CustomCodeNode
+    # Gripper : Prise Bac Vide.drl
+    #====================== Cycles de Recherche Force + Aspiration/Relâchement ==================
+    # CHANGE LOG :
+    #   V1.0 - Author : JCL - 30/06/2025    // Création
+    #   V2.0 - Author : JCL - 23/07/2025    // Passage en fonctionnement Dart Studio
+    #   V2.1 - Author : JCL - 02/09/2025    // Séparation des fonctions Gripper en 3 fichiers DRL
+    #============================================================================================
+    
+    
+    #============================================================================================
+    
+    #---------------------------------------- Paramétrage --------------------------------------
+    set_ref_coord(DR_TOOL)              # Repère de référence
+    set_singularity_handling(DR_VAR_VEL)# Type d'évitement Singularités (variation de vitesse)
+    watch_collision_on(100)             # Niveau de sensibilité aux collisions (en %)
+    
+    set_tcp("Prehenseur")               # Sélection de l'Effecteur (Tool)
+    
+    # Paramètres de Compliance      (Mise à plat du préhenseur) - Valeur élevée = Grande rigidité
+    Rigidite_Comp_Lat   = 5000          # Compliance Latérale X/Y (en N/m)
+    Rigidite_Comp_Z     = 2000          # Compliance Verticale Z (en N/m)
+    Rigidite_Comp_Ang   = 3000             # Compliance Angulaire (en N/rad)
+    
+    # Paramètres de Force           (Appui des ventouses)
+    Force_Appui         = 60            # Consigne de Force (en N)
+    Tolerance_Force     = 5             # Tolérance pour Contrôle Force
+    
+    # Fenêtre de Force Atteinte
+    Check_Force_Moins   = Force_Appui - Tolerance_Force
+    Check_Force_Plus    = Force_Appui + Tolerance_Force
+    
+    # Calcul paramètres de Force
+    Force_Consigne  = [0,0,Force_Appui,0,0,0]           # Force désirée en N
+    Force_Direction = [0,0,1,0,0,0]                     # Force direction : en Z
+    Force_Damping   = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]    # Force amortissement (1 = par défaut)
+    Force_Factor    = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]    # Force facteur (1 = par défaut)
+    
+    #------------------------------------------ Séquence ----------------------------------------
+    # Activation Compliance
+    task_compliance_ctrl([Rigidite_Comp_Lat, Rigidite_Comp_Lat, Rigidite_Comp_Z, Rigidite_Comp_Ang, Rigidite_Comp_Ang, Rigidite_Comp_Ang])
+    
+    # Activation Force
+    set_desired_force(Force_Consigne, Force_Direction)
+    set_damping_factor(Force_Damping)
+    set_force_factor(Force_Factor)
+    
+    # Attente application Force
+    while not check_force_condition(DR_AXIS_Z, min= Check_Force_Moins, max= Check_Force_Plus, ref=DR_TOOL) :
+        wait(0.1)
+    wait(1)                         # Attente application de la force pour Mise à plat
+    
+    # Désactivation Force et Compliance
+    release_force()
+    release_compliance_ctrl()
+    
+    # Pilotage EV
+    set_digital_output(1, ON)       # EV Générale
+    set_digital_output(2, ON)       # EV Circuit n°1
+    set_digital_output(3, ON)       # EV Circuit n°2
+    set_digital_output(4, ON)       # EV Circuit n°3
+    
+    # Attente retour Vaccuostats
+    wait_digital_input(1, 1)        # Vaccuostat Général
+    wait_digital_input(2, 1)        # Vaccuostat Circuit n°1
+    wait_digital_input(3, 1)        # Vaccuostat Circuit n°2
+    wait_digital_input(4, 1)        # Vaccuostat Circuit n°3
+    wait(1.5)                       # Attente montée du vide
+    
+    # Arrêt Pilotage EV
+    set_digital_output(2, OFF)       # EV Circuit n°1
+    #set_digital_output(3, OFF)      # EV Circuit n°2          (Maintient vide sur Circuit n°2)
+    set_digital_output(4, OFF)       # EV Circuit n°3
+    #wait(0.5)
+    #set_digital_output(1, OFF)      # EV Générale             (Maintient vide sur Circuit n°2)
+    
+    # Affectation nouveau Poids d'Outil
+    set_tool("Poids_Bac_Vide")             # Sélection Poids de l'outil (PayLoad)
+    
+    
+_alias_sub_name_gripper_prise_vide = gripper_prise_vide
+
+def gripper_prise_plein():
+    global System_Pos_Homej
+    global System_Pos_Homex
+    global System_01E02
+    global System_Hauteur_Z
+    global System_Mesure_Pile_V
+    global System_Mesure_Pile_P
+    global System_TE_Prise
+    global System_Step_Test
+    global System_HZ
+    global System_EV
+    global System_OR
+    global System_PLC_OUT_Echo_code_Cycle
+    global System_PLC_OUT_Echo_code_Pos
+    global System_PLC_OUT_Att_Cycle_code
+    global System_PLC_OUT_Error_code
+    global System_PLC_OUT_Step_Number
+    global System_PLC_OUT_Life_Int
+    global System_PLC_OUT_Cycle_End
+    global System_PLC_IN_Cycle_code
+    global System_PLC_IN_Position_code
+    global System_PLC_IN_Life_Int
+    global System_PLC_IN_Start_Cycle
+    global System_I_Vacc_General
+    global System_I_Vacc_Circuit1
+    global System_I_Vacc_Circuit2
+    global System_I_Vacc_Circuit3
+    global System_I_Err_Laser
+    global System_PLC_IN_Ack
+    global System_PLC_IN_TE_Recal_Pile_V
+    global System_Vitesse_Max
+    global System_Ctrl_Circuits_Num
+    global System_Ctrl_Circuits_OK
+    global System_PLC_IN_RAZ_TE_Ctrl
+    global System_Hauteur_Pile_Select
+    # CustomCodeNode
+    # Gripper : Prise Bac Plein.drl
+    #====================== Cycles de Recherche Force + Aspiration/Relâchement ==================
+    # CHANGE LOG :
+    #   V1.0 - Author : JCL - 30/06/2025    // Création
+    #   V2.0 - Author : JCL - 23/07/2025    // Passage en fonctionnement Dart Studio
+    #   V2.1 - Author : JCL - 02/09/2025    // Séparation des fonctions Gripper en 3 fichiers DRL
+    #============================================================================================
+    
+    
+    #============================================================================================
+    
+    #---------------------------------------- Paramétrage --------------------------------------
+    set_ref_coord(DR_TOOL)              # Repère de référence
+    set_singularity_handling(DR_VAR_VEL)# Type d'évitement Singularités (variation de vitesse)
+    watch_collision_on(100)             # Niveau de sensibilité aux collisions (en %)
+    
+    set_tcp("Prehenseur")               # Sélection de l'Effecteur (Tool)
+    
+    # Paramètres de Compliance      (Mise à plat du préhenseur) - Valeur élevée = Grande rigidité
+    Rigidite_Comp_Lat   = 5000          # Compliance Latérale X/Y (en N/m)
+    Rigidite_Comp_Z     = 2000          # Compliance Verticale Z (en N/m)
+    Rigidite_Comp_Ang   = 0             # Compliance Angulaire (en N/rad)
+    
+    # Paramètres de Force           (Appui des ventouses)
+    Force_Appui         = 60            # Consigne de Force (en N)
+    Tolerance_Force     = 5             # Tolérance pour Contrôle Force
+    
+    # Fenêtre de Force Atteinte
+    Check_Force_Moins   = Force_Appui - Tolerance_Force
+    Check_Force_Plus    = Force_Appui + Tolerance_Force
+    
+    # Calcul paramètres de Force
+    Force_Consigne  = [0,0,Force_Appui,0,0,0]           # Force désirée en N
+    Force_Direction = [0,0,1,0,0,0]                     # Force direction : en Z
+    Force_Damping   = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]    # Force amortissement (1 = par défaut)
+    Force_Factor    = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]    # Force facteur (1 = par défaut)
+    
+    #------------------------------------------ Séquence ----------------------------------------
+    # Activation Compliance
+    task_compliance_ctrl([Rigidite_Comp_Lat, Rigidite_Comp_Lat, Rigidite_Comp_Z, Rigidite_Comp_Ang, Rigidite_Comp_Ang, Rigidite_Comp_Ang])
+    
+    # Activation Force
+    set_desired_force(Force_Consigne, Force_Direction)
+    set_damping_factor(Force_Damping)
+    set_force_factor(Force_Factor)
+    
+    # Attente application Force
+    while not check_force_condition(DR_AXIS_Z, min= Check_Force_Moins, max= Check_Force_Plus, ref=DR_TOOL) :
+        wait(0.1)
+    wait(1)                         # Attente application de la force pour Mise à plat
+    
+    # Désactivation Force et Compliance
+    release_force()
+    release_compliance_ctrl()
+    
+    # Pilotage EV
+    set_digital_output(1, ON)       # EV Générale
+    set_digital_output(2, ON)       # EV Circuit n°1
+    wait_digital_input(2, 1)        # Vaccuostat Circuit n°1
+    set_digital_output(3, ON)       # EV Circuit n°2
+    wait_digital_input(3, 1)        # Vaccuostat Circuit n°2
+    set_digital_output(4, ON)       # EV Circuit n°3
+    wait_digital_input(4, 1)        # Vaccuostat Circuit n°3
+    wait(1.5)                       # Attente montée du vide
+    
+    # Attente retour Vaccuostats
+    wait_digital_input(1, 1)        # Vaccuostat Général
+    
+    # Arrêt Pilotage EV
+    set_digital_output(2, OFF)       # EV Circuit n°1
+    #set_digital_output(3, OFF)      # EV Circuit n°2               (Maintient vide sur Circuit n°2)
+    set_digital_output(4, OFF)       # EV Circuit n°3
+    #wait(0.5)
+    #set_digital_output(1, OFF)      # EV Générale                  (Maintient vide sur Circuit n°2)
+    
+    # Affectation nouveau Poids/Forme d'Outil
+    set_tool("Poids_Bac_Plein")             # Sélection Poids de l'outil (PayLoad)
+    set_tool_shape("Forme_Bac_Plein")       # Sélection Forme de l'outil
+    
+    
+_alias_sub_name_gripper_prise_plein = gripper_prise_plein
+
+def gripper_depose():
+    global System_Pos_Homej
+    global System_Pos_Homex
+    global System_01E02
+    global System_Hauteur_Z
+    global System_Mesure_Pile_V
+    global System_Mesure_Pile_P
+    global System_TE_Prise
+    global System_Step_Test
+    global System_HZ
+    global System_EV
+    global System_OR
+    global System_PLC_OUT_Echo_code_Cycle
+    global System_PLC_OUT_Echo_code_Pos
+    global System_PLC_OUT_Att_Cycle_code
+    global System_PLC_OUT_Error_code
+    global System_PLC_OUT_Step_Number
+    global System_PLC_OUT_Life_Int
+    global System_PLC_OUT_Cycle_End
+    global System_PLC_IN_Cycle_code
+    global System_PLC_IN_Position_code
+    global System_PLC_IN_Life_Int
+    global System_PLC_IN_Start_Cycle
+    global System_I_Vacc_General
+    global System_I_Vacc_Circuit1
+    global System_I_Vacc_Circuit2
+    global System_I_Vacc_Circuit3
+    global System_I_Err_Laser
+    global System_PLC_IN_Ack
+    global System_PLC_IN_TE_Recal_Pile_V
+    global System_Vitesse_Max
+    global System_Ctrl_Circuits_Num
+    global System_Ctrl_Circuits_OK
+    global System_PLC_IN_RAZ_TE_Ctrl
+    global System_Hauteur_Pile_Select
+    # CustomCodeNode
+    # Gripper : Dépose bac Vide/Plein.drl
+    #====================== Cycles de Recherche Force + Aspiration/Relâchement ==================
+    # CHANGE LOG :
+    #   V1.0 - Author : JCL - 30/06/2025    // Création
+    #   V2.0 - Author : JCL - 23/07/2025    // Passage en fonctionnement Dart Studio
+    #   V2.1 - Author : JCL - 02/09/2025    // Séparation des fonctions Gripper en 3 fichiers DRL
+    #============================================================================================
+    
+    
+    #============================================================================================
+    
+    #---------------------------------------- Paramétrage --------------------------------------
+    set_ref_coord(DR_TOOL)              # Repère de référence
+    set_singularity_handling(DR_VAR_VEL)# Type d'évitement Singularités (variation de vitesse)
+    watch_collision_on(100)             # Niveau de sensibilité aux collisions (en %)
+    
+    set_tcp("Prehenseur")               # Sélection de l'Effecteur (Tool)
+    
+    # Paramètres de Compliance      (Mise à plat du préhenseur) - Valeur élevée = Grande rigidité
+    Rigidite_Comp_Lat   = 3000          # Compliance Latérale X/Y (en N/m)
+    Rigidite_Comp_Z     = 2000          # Compliance Verticale Z (en N/m)
+    Rigidite_Comp_Ang   = 0             # Compliance Angulaire (en N/rad)
+    
+    # Rigidité différente sur première couche de Bacs Pleins (sinon la sache plastique décalle les bacs)
+    set_ref_coord(DR_BASE)              # Repère de référence
+    Pos_Actuelle, sol   = get_current_posx()
+    if (Pos_Actuelle[0] < 0) and (System_Hauteur_Pile_Select > 1350) :
+        # Paramètres de Compliance      (Mise à plat du préhenseur) - Valeur élevée = Grande rigidité
+        Rigidite_Comp_Lat   = 10000         # Compliance Latérale X/Y (en N/m)
+        Rigidite_Comp_Z     = 1000          # Compliance Verticale Z (en N/m)
+        Rigidite_Comp_Ang   = 10000         # Compliance Angulaire (en N/rad)
+    set_ref_coord(DR_TOOL)              # Repère de référence
+    
+    # Paramètres de Force           (Appui des ventouses)
+    Force_Appui         = 60            # Consigne de Force (en N)
+    Tolerance_Force     = 5             # Tolérance pour Contrôle Force
+    
+    # Fenêtre de Force Atteinte
+    Check_Force_Moins   = Force_Appui - Tolerance_Force
+    Check_Force_Plus    = Force_Appui + Tolerance_Force
+    
+    # Calcul paramètres de Force
+    Force_Consigne  = [0,0,Force_Appui,0,0,0]           # Force désirée en N
+    Force_Direction = [0,0,1,0,0,0]                     # Force direction : en Z
+    Force_Damping   = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]    # Force amortissement (1 = par défaut)
+    Force_Factor    = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]    # Force facteur (1 = par défaut)
+    
+    #------------------------------------------ Séquence ----------------------------------------
+        # Activation Compliance
+    task_compliance_ctrl([Rigidite_Comp_Lat, Rigidite_Comp_Lat, Rigidite_Comp_Z, Rigidite_Comp_Ang, Rigidite_Comp_Ang, Rigidite_Comp_Ang])
+    
+    # Activation Force
+    set_desired_force(Force_Consigne, Force_Direction)
+    set_damping_factor(Force_Damping)
+    set_force_factor(Force_Factor)
+    
+    # Attente application Force
+    while not check_force_condition(DR_AXIS_Z, min= Check_Force_Moins, max= Check_Force_Plus, ref=DR_TOOL) :
+        wait(0.1)
+    wait(1)                         # Attente application de la force pour Mise à plat
+    
+    # Pilotage EV
+    set_digital_output(1, OFF)      # EV Générale
+    set_digital_output(2, ON)       # EV Circuit n°1
+    set_digital_output(3, ON)       # EV Circuit n°2
+    set_digital_output(4, ON)       # EV Circuit n°3
+    
+    # Attente retour Vaccuostats
+    wait_digital_input(2, 0)        # Vaccuostat Circuit n°1
+    wait_digital_input(3, 0)        # Vaccuostat Circuit n°2
+    wait_digital_input(4, 0)        # Vaccuostat Circuit n°3
+    wait(2)                         # Attente perte du vide
+    
+    # Arrêt Pilotage EV
+    set_digital_output(2, OFF)      # EV Circuit n°1
+    set_digital_output(3, OFF)      # EV Circuit n°2
+    set_digital_output(4, OFF)      # EV Circuit n°3
+    
+    watch_collision_on(80)                                                  # Niveau de sensibilité aux collisions (en %) pour Decollement ventouses
+    
+    # Désactivation Force et Compliance
+    release_force()
+    release_compliance_ctrl()
+    
+    # Montée relative pour décollement des ventouses
+    movel([0,0,20,0,0,0], acc = 500, ref = DR_BASE, mod = DR_MV_MOD_REL)        # Mouvement relatif montée
+    
+    watch_collision_on(100)                                                     # Niveau de sensibilité aux collisions (en %)
+    
+    # Affectation nouveau Poids/Forme d'Outil
+    set_tool("Poids_VIDE")                  # Sélection Poids de l'outil (PayLoad)
+    set_tool_shape("Forme_Prehenseur")      # Sélection Forme de l'outil
+    
+    
+_alias_sub_name_gripper_depose = gripper_depose
+
+def init_mouvements():
+    global System_Pos_Homej
+    global System_Pos_Homex
+    global System_01E02
+    global System_Hauteur_Z
+    global System_Mesure_Pile_V
+    global System_Mesure_Pile_P
+    global System_TE_Prise
+    global System_Step_Test
+    global System_HZ
+    global System_EV
+    global System_OR
+    global System_PLC_OUT_Echo_code_Cycle
+    global System_PLC_OUT_Echo_code_Pos
+    global System_PLC_OUT_Att_Cycle_code
+    global System_PLC_OUT_Error_code
+    global System_PLC_OUT_Step_Number
+    global System_PLC_OUT_Life_Int
+    global System_PLC_OUT_Cycle_End
+    global System_PLC_IN_Cycle_code
+    global System_PLC_IN_Position_code
+    global System_PLC_IN_Life_Int
+    global System_PLC_IN_Start_Cycle
+    global System_I_Vacc_General
+    global System_I_Vacc_Circuit1
+    global System_I_Vacc_Circuit2
+    global System_I_Vacc_Circuit3
+    global System_I_Err_Laser
+    global System_PLC_IN_Ack
+    global System_PLC_IN_TE_Recal_Pile_V
+    global System_Vitesse_Max
+    global System_Ctrl_Circuits_Num
+    global System_Ctrl_Circuits_OK
+    global System_PLC_IN_RAZ_TE_Ctrl
+    global System_Hauteur_Pile_Select
+    # CustomCodeNode
+    # Init_Mouvements.drl
+    #==================================== Cycle Mise en Origine =================================
+    # CHANGE LOG :
+    #   V1.0 - Author : JCL - 17/06/2025    // Création
+    #   V2.0 - Author : JCL - 23/07/2025    // Passage en fonctionnement Dart Studio
+    #============================================================================================
+    
+    
+    #============================================================================================
+    
+    #---------------------------------------- Déclarations --------------------------------------
+    # Récupération variables Système
+    global System_I_Vacc_General                # Entrée digitale Vaccuostat Général
+    global System_I_Vacc_Circuit1               # Entrée digitale Vaccuostat Circuit vide n°1
+    global System_I_Vacc_Circuit2               # Entrée digitale Vaccuostat Circuit vide n°2
+    global System_I_Vacc_Circuit3               # Entrée digitale Vaccuostat Circuit vide n°3
+    global System_TE_Prise                      # Regroupement retours Vaccuostats circuits de vide
+    
+    global System_PLC_OUT_Error_code            # Échange avec Automate : Sortie Error code
+    global System_PLC_OUT_Step_Number           # Échange avec Automate : Sortie Step Number
+    
+    global System_PLC_IN_RAZ_TE_Ctrl            # Échange avec Automate : Demande de RAZ TE Contrôle Circuits de vide
+    global System_Ctrl_Circuits_OK              # TE Contrôle Circuits de vide Effectué
+    
+    global System_Hauteur_Z                     # Hauteur Z générale pour Scan + Positions au-dessus des piles
+    
+    # Variables Process
+    Relatif_Degag_Lent      = posx(0,0,320,0,0,0)   # Dégagement relatif Petite vitesse
+    Consigne_Lissage        = 50                    # Consigne distance de Lissage Z
+    
+    #---------------------------------------- Paramétrage --------------------------------------
+    set_ref_coord(DR_BASE)              # Repère de référence
+    set_singularity_handling(DR_VAR_VEL)# Type d'évitement Singularités (variation de vitesse)
+    #set_singularity_handling(DR_AVOID)  # Type d'évitement Singularités (évitement automatique)
+    watch_collision_on(100)             # Niveau de sensibilité aux collisions (en %)
+    set_velj(60.0)                      # Vitesse Joint (en °/s)
+    set_accj(60.0)                      # Accélération Joint (en °/s²)
+    set_velx(250.0, 80.625)             # Vitesse Cartésienne (en mm/s | °/s)
+    set_accx(800.0, 322.5)              # Accélération Cartésienne (en mm/s² | °/s²)
+    
+    set_tcp("Prehenseur")               # Sélection Effecteur (Tool)
+    
+    #------------------------------------------ Séquence ----------------------------------------
+    if System_TE_Prise == OFF :                 # Si préhenseur Vide (aucun retour circuits de vide)
+        # Initialisation Sorties Préhenseur
+        set_digital_output(1, OFF)              # Electrovanne Vide Général
+        wait(1)
+        set_digital_output(2, OFF)              # Electrovanne Vide Circuit n°1
+        set_digital_output(3, OFF)              # Electrovanne Vide Circuit n°2
+        set_digital_output(4, OFF)              # Electrovanne Vide Circuit n°3
+    
+        # Initialisation Poids/Forme de l'outil
+        set_tool("Poids_VIDE")                  # Sélection Poids de l'outil (PayLoad)
+        set_tool_shape("Forme_Prehenseur")      # Sélection Forme de l'outil
+    
+    # Relevé position actuelle
+    Pos_Actuelle, sol   = get_current_posx()                    # Position début Homming
+    
+    # Evitement de singularité sur la palette Bacs Pleins + Bacs Vides du dessus
+    if (Pos_Actuelle[0] < 0) or (Pos_Actuelle[2] > -800) :
+        set_singularity_handling(DR_AVOID)  # Type d'évitement Singularités (évitement automatique)
+    
+    # Calcul différence de hauteur Z avec position Haute Générale
+    Delta_Z             = System_Hauteur_Z - Pos_Actuelle[2]    # Calcul écart en Z
+    
+    # Conditions Dégagement LENT :      Robot en dessous du Z Home et Écart en Z supérieur au dégagement Lent
+    Degagement_Lent     = Pos_Actuelle[2] < System_Hauteur_Z and Delta_Z > Relatif_Degag_Lent[2]
+    # Conditions Dégagement RAPIDE :    Robot en dessous du Z Home
+    Degagement_Rapide   = Pos_Actuelle[2] < System_Hauteur_Z
+    
+    # Calcul relatif Dégagement RAPIDE
+    if Degagement_Lent :
+        Relatif_Degag_Rapide    = posx(0, 0, Delta_Z - Relatif_Degag_Lent[2], 0, 0, 0)
+    else :
+        Relatif_Degag_Rapide    = posx(0, 0, Delta_Z, 0, 0, 0)
+    
+    # Check Distance Home
+    Dist_Home   = get_distance(Pos_Actuelle, System_Pos_Homex)
+    
+    if abs(Dist_Home) > 0.5 :
+        #tp_log("Debut cycle de Mise en origine, distance = " +str(Dist_Home))
+    
+        # Dégagement LENT
+        if Degagement_Lent :
+            watch_collision_on(80)                      # Niveau de sensibilité aux collisions (en %) pour Décollement Ventouses
+            movel(Relatif_Degag_Lent, vel = 150, r = Consigne_Lissage, ref = DR_BASE, mod = DR_MV_MOD_REL)
+            watch_collision_on(100)                    # Niveau de sensibilité aux collisions (en %) pour Décollement Ventouses
+    
+        # SET Hors Zones
+        System_HZ[1] = ON                               # Hors Zone Palette bacs Vides
+        System_HZ[2] = ON                               # Hors Zone Palette bacs Pleins
+        System_HZ[3] = ON                               # Hors Zone Convoyeur oblique
+    
+        # Dégagement RAPIDE si Robot en dessous du Z Home
+        if Degagement_Rapide :
+            movel(Relatif_Degag_Rapide, ra= DR_MV_RA_DUPLICATE, ref = DR_BASE, mod = DR_MV_MOD_REL)
+    
+        # Positionnement intermédiaire Home pour ne pas toucher la presse (en fonction de la position X/Y du robot)
+        if (Pos_Actuelle[0] >= 400) and (Pos_Actuelle[1] >= -600) :                         # Robot dans la zone Palette bacs Vides
+            if (Pos_Actuelle[0] >= 900) :                                                   # Robot dans la zone Piles bacs Vides n°1 ou n°2
+                if (Pos_Actuelle[1] > 0) :                                                  # Robot dans la zone Pile bacs Vides n°1
+                    movel([-200,-200,0,0,0,0], r = 100, ra= DR_MV_RA_DUPLICATE, ref = DR_BASE, mod = DR_MV_MOD_REL)
+                if (Pos_Actuelle[1] < 0) :                                                  # Robot dans la zone Pile bacs Vides n°2
+                    movel([-200,+200,0,0,0,0], r = 100, ra= DR_MV_RA_DUPLICATE, ref = DR_BASE, mod = DR_MV_MOD_REL)
+        #    movej([-62, 0, 120, 0, 62, -4], vel = 20, acc = 10, r = 100, ra= DR_MV_RA_DUPLICATE, velx = 250)
+        #if (Pos_Actuelle[0] <= -350) and (Pos_Actuelle[1] >= -600) :                        # Robot dans la zone Palette bacs Pleins
+        #    movej([-120, 0, 120, 0, 62, -4], vel = 20, acc = 10, r = 100, ra= DR_MV_RA_DUPLICATE, velx = 250)
+    
+    # Positionnement en Home : Laser Au-dessus du cache noir du convoyeur Oblique (à 850mm en haut)
+    movej(System_Pos_Homej, ra= DR_MV_RA_DUPLICATE, velx = 250)
+    
+    # Check Homming, référencement des axes
+    #Robot_en_Home = get_digital_output(12)
+    #Dde_Home = check_robot_mastering()
+    #if (not Robot_en_Home) or Dde_Home :
+    #   move_home(DR_HOME_TARGET_USER)                  # Mouvement vers HOME USER
+    
+    
+    # SET Hors Zones
+    System_HZ[1] = ON                                   # Hors Zone Palette bacs Vides
+    System_HZ[2] = ON                                   # Hors Zone Palette bacs Pleins
+    System_HZ[3] = ON                                   # Hors Zone Convoyeur oblique
+    
+    
+    # Initialisation Laser (Position HOME au-dessus du cache noir du convoyeur Oblique, à Z = 450)
+    Pos_Actuelle, sol   = get_current_posx()                  # Position fin Homming
+    Hauteur_Calib       = 325                                 # Hauteur Z de Calibrage Laser (pour une mesure à 750mm du convoyeur)
+    Dist_Calib          = Pos_Actuelle[2] - Hauteur_Calib     # Hauteur Z actuelle - Hauteur Z Calibration
+    
+    if ((System_01E02 < 600) or (System_01E02 > 900)) and System_TE_Prise == OFF :                 # Hauteur mesurée entre Laser et Convoyeur = 850mm
+        movel([0,0,-Dist_Calib,0,0,0], ref = DR_BASE, mod = DR_MV_MOD_REL)  # Dégagement relatif de Z - Distance Calibration
+        wait(2)                             # Stabilisation
+        set_digital_output(5, ON)           # Calibrage Laser
+        wait(0.5)
+        set_digital_output(5, OFF)          # Calibrage Laser
+        wait(2)
+        movel([0,0,Dist_Calib,0,0,0], ref = DR_BASE, mod = DR_MV_MOD_REL)   # Dégagement relatif de Z + Distance Calibration
+    else :
+        set_digital_output(5, OFF)          # RAZ Sortie Calibrage Laser
+    
+    
+    # Contrôle Circuits de vide Requis
+    if System_Ctrl_Circuits_OK == 0 :
+        System_PLC_OUT_Error_code = 17              # Error Number
+        tp_log("Contrôle Circuits de vide Requis")
+        while System_Ctrl_Circuits_OK == 0 :
+            wait(1)
+    
+    # Contrôle Vide Général
+    if System_I_Vacc_General == OFF and System_TE_Prise == OFF :
+        System_PLC_OUT_Error_code = 1               # Error Number
+        tp_log("Absence Vide Usine")
+        while System_I_Vacc_General == OFF :
+            wait(1)
+    
+    System_PLC_OUT_Error_code = 0                   # Error Number
+    System_PLC_OUT_Step_Number = 0                  # Step Number
+    
+    
+_alias_sub_name_init_mouvements = init_mouvements
+
+def robot_mouvements():
+    global System_Pos_Homej
+    global System_Pos_Homex
+    global System_01E02
+    global System_Hauteur_Z
+    global System_Mesure_Pile_V
+    global System_Mesure_Pile_P
+    global System_TE_Prise
+    global System_Step_Test
+    global System_HZ
+    global System_EV
+    global System_OR
+    global System_PLC_OUT_Echo_code_Cycle
+    global System_PLC_OUT_Echo_code_Pos
+    global System_PLC_OUT_Att_Cycle_code
+    global System_PLC_OUT_Error_code
+    global System_PLC_OUT_Step_Number
+    global System_PLC_OUT_Life_Int
+    global System_PLC_OUT_Cycle_End
+    global System_PLC_IN_Cycle_code
+    global System_PLC_IN_Position_code
+    global System_PLC_IN_Life_Int
+    global System_PLC_IN_Start_Cycle
+    global System_I_Vacc_General
+    global System_I_Vacc_Circuit1
+    global System_I_Vacc_Circuit2
+    global System_I_Vacc_Circuit3
+    global System_I_Err_Laser
+    global System_PLC_IN_Ack
+    global System_PLC_IN_TE_Recal_Pile_V
+    global System_Vitesse_Max
+    global System_Ctrl_Circuits_Num
+    global System_Ctrl_Circuits_OK
+    global System_PLC_IN_RAZ_TE_Ctrl
+    global System_Hauteur_Pile_Select
+    # CustomCodeNode
+    # Robot Mouvements.drl
+    #================================== Cycle appel Mouvements Robot ==============================
+    # CHANGE LOG :
+    #   V1.0 - Author : JCL - 24/06/2025    // Création
+    #   V2.0 - Author : JCL - 23/07/2025    // Passage en fonctionnement Dart Studio
+    #==============================================================================================
+    
+    
+    #============================================================================================
+    
+    #---------------------------------------- Déclarations --------------------------------------
+    # Récupération variables Système
+    global System_OR                            # Échange avec Automate : Liste des Ordres      (Sorties)
+    
+    global System_PLC_IN_Cycle_code             # Échange avec Automate : Entrée Code Cycle
+    global System_PLC_IN_Position_code          # Échange avec Automate : Entrée Code Position
+    global System_PLC_IN_Start_Cycle            # Échange avec Automate : Entrée Start Cycle
+    
+    global System_PLC_OUT_Echo_code_Cycle       # Échange avec Automate : Sortie Echo code Cycle
+    global System_PLC_OUT_Echo_code_Pos         # Échange avec Automate : Sortie Echo code Position
+    global System_PLC_OUT_Error_code            # Échange avec Automate : Sortie Error code
+    global System_PLC_OUT_Step_Number           # Échange avec Automate : Sortie Step Number
+    global System_PLC_OUT_Att_Cycle_code        # Échange avec Automate : Sortie Attente code Cycle
+    global System_PLC_OUT_Cycle_End             # Échange avec Automate : Sortie Cycle End
+    
+    global System_Step_Test                     # Variable pour déroulement programme pour TEST
+    
+    #================================= Fonction Trajectoires Production ===========================
+    def CODE_CYCLE_1() :
+        # Récupération variables Système
+        global System_EV                            # Échange avec Automate : Liste des Evènements  (Entrées)
+        global System_OR                            # Échange avec Automate : Liste des Ordres      (Sorties)
+    
+        global System_PLC_IN_Cycle_code             # Échange avec Automate : Entrée Code Cycle
+        global System_PLC_IN_Position_code          # Échange avec Automate : Entrée Code Position
+    
+        global System_PLC_OUT_Echo_code_Cycle       # Échange avec Automate : Sortie Echo code Cycle
+        global System_PLC_OUT_Echo_code_Pos         # Échange avec Automate : Sortie Echo code Position
+        global System_PLC_OUT_Error_code            # Échange avec Automate : Sortie Error code
+        global System_PLC_OUT_Step_Number           # Échange avec Automate : Sortie Step Number
+    
+        while(System_PLC_IN_Cycle_code == 1) :
+    
+            System_PLC_OUT_Echo_code_Cycle     = 1  # Echo Code Cycle
+            System_PLC_OUT_Echo_code_Pos       = 1  # Echo Code Position
+    
+            #==================================================
+            # TRAJECTOIRES BACS VIDES
+            #==================================================
+            if System_EV[1] :
+                tp_log("Start Trajectoire 1 : Scan palette Bacs Vides")
+                scan_pal_vide()
+                tp_log("Fin Trajectoire 1 : Scan palette Bacs Vides")
+    
+                System_OR[1] = ON                          # SET Order n°1
+                wait(0.5)
+                while (System_EV[1] == True) :             # WAIT Event n°1
+                    wait(0.1)
+                System_OR[1] = OFF                         # RESET Order n°1
+    
+    
+            elif System_EV[2] :
+                tp_log("Start Trajectoire 2 : Prise Bac Vide")
+                prise_bac_vide()
+                tp_log("Fin Trajectoire 2 : Prise Bac Vide")
+    
+                System_OR[2] = ON                          # SET Order n°2
+                wait(0.5)
+                while (System_EV[2] == True) :             # WAIT Event n°2
+                    wait(0.1)
+                System_OR[2] = OFF                         # RESET Order n°2
+    
+    
+            elif System_EV[3] :
+                tp_log("Start Trajectoire 3 : Dépose Bac Vide")
+                depose_bac_vide()
+                tp_log("Fin Trajectoire 3 : Dépose Bac Vide")
+    
+                System_OR[3] = ON                          # SET Order n°3
+                wait(0.5)
+                while (System_EV[3] == True) :             # WAIT Event n°3
+                    wait(0.1)
+                System_OR[3] = OFF                         # RESET Order n°3
+    
+    
+            #==================================================
+            # TRAJECTOIRES BACS PLEINS
+            #==================================================
+            elif System_EV[6] :
+                tp_log("Start Trajectoire 6 : Scan palette Bacs Pleins")
+                scan_pal_plein()
+                tp_log("Fin Trajectoire 6 : Scan palette Bacs Pleins")
+    
+                System_OR[6] = ON                          # SET Order n°6
+                wait(0.5)
+                while (System_EV[6] == True) :             # WAIT Event n°6
+                    wait(0.1)
+                System_OR[6] = OFF                         # RESET Order n°6
+    
+    
+            elif System_EV[7] :
+                tp_log("Start Trajectoire 7 : Prise Bac Plein")
+                prise_bac_plein()
+                tp_log("Fin Trajectoire 7 : Prise Bac Plein")
+    
+                System_OR[7] = ON                          # SET Order n°7
+                wait(0.5)
+                while (System_EV[7] == True) :             # WAIT Event n°7
+                    wait(0.1)
+                System_OR[7] = OFF                         # RESET Order n°7
+    
+    
+            elif System_EV[8] :
+                tp_log("Start Trajectoire 8 : Dépose Bac Plein")
+                depose_bac_plein()
+                tp_log("Fin Trajectoire 8 : Dépose Bac Plein")
+    
+                System_OR[8] = ON                          # SET Order n°8
+                wait(0.5)
+                while (System_EV[8] == True) :             # WAIT Event n°8
+                    wait(0.1)
+                System_OR[8] = OFF                         # RESET Order n°8
+    
+    
+            #==================================================
+            # TRAJECTOIRE INCONNUE
+            #==================================================
+            '''
+            else :
+                System_PLC_OUT_Error_code = 3                          # Error Number
+                tp_log("Trajectoire Inconnue")
+                while (System_PLC_IN_Cycle_code >= 0) :
+                    wait(1)
+                System_PLC_OUT_Error_code = 0                          # Error Number
+            '''
+    #------------------------------------------ Séquence ----------------------------------------
+    # ATTENTE CODE CYCLE + START
+    tp_log("Attente Code Cycle + Start Cycle")
+    System_PLC_OUT_Att_Cycle_code  = 1              # Attente Code Cycle
+    
+    while (System_PLC_IN_Start_Cycle == 0 or System_PLC_IN_Cycle_code == 0) :
+        wait(0.5)
+    
+    System_PLC_OUT_Att_Cycle_code  = 0              # Attente Code Cycle
+    
+    
+    # Exécution Code Cycle sélectionné
+    if (System_PLC_IN_Start_Cycle == 1 and System_PLC_IN_Cycle_code >= 0) :
+    
+        # RAZ Ordres
+        for i in range(0, 32) :
+            System_OR[i] = OFF
+    
+        #==================================================
+        # CODE CYCLE 1 : PRODUCTION BACS BLEUS
+        #==================================================
+        if System_PLC_IN_Cycle_code == 1 :
+            tp_log("Start Cycle 1 : Production Bacs Bleus")
+            CODE_CYCLE_1()
+            tp_log("Fin Cycle 1 : Production Bacs Bleus")
+    
+        #==================================================
+        # CODE CYCLE INCONNU
+        #==================================================
+        else :
+            System_PLC_OUT_Error_code = 2                          # Error Number
+            tp_log("Code Cycle Inconnu")
+            while (System_PLC_IN_Start_Cycle == 1 and System_PLC_IN_Cycle_code >= 0) :
+                wait(1)
+            System_PLC_OUT_Error_code = 0                          # Error Number
+    
+    
+    # Attente retombée signaux API
+    System_PLC_OUT_Cycle_End = 1                   # Cycle End
+    wait(0.5)
+    while (System_PLC_IN_Start_Cycle != 0 or System_PLC_IN_Cycle_code != 0) :
+        wait(1)
+    
+    
+    # RAZ Échanges API
+    System_PLC_OUT_Echo_code_Cycle     = 0          # Echo Code Cycle
+    System_PLC_OUT_Echo_code_Pos       = 0          # Echo Code Position
+    System_PLC_OUT_Error_code          = 0          # Error Number
+    System_PLC_OUT_Step_Number         = 0          # Step Number
+    System_PLC_OUT_Cycle_End           = 0          # Cycle End
+    
+    
+_alias_sub_name_robot_mouvements = robot_mouvements
+
+def scan_pal_vide():
+    global System_Pos_Homej
+    global System_Pos_Homex
+    global System_01E02
+    global System_Hauteur_Z
+    global System_Mesure_Pile_V
+    global System_Mesure_Pile_P
+    global System_TE_Prise
+    global System_Step_Test
+    global System_HZ
+    global System_EV
+    global System_OR
+    global System_PLC_OUT_Echo_code_Cycle
+    global System_PLC_OUT_Echo_code_Pos
+    global System_PLC_OUT_Att_Cycle_code
+    global System_PLC_OUT_Error_code
+    global System_PLC_OUT_Step_Number
+    global System_PLC_OUT_Life_Int
+    global System_PLC_OUT_Cycle_End
+    global System_PLC_IN_Cycle_code
+    global System_PLC_IN_Position_code
+    global System_PLC_IN_Life_Int
+    global System_PLC_IN_Start_Cycle
+    global System_I_Vacc_General
+    global System_I_Vacc_Circuit1
+    global System_I_Vacc_Circuit2
+    global System_I_Vacc_Circuit3
+    global System_I_Err_Laser
+    global System_PLC_IN_Ack
+    global System_PLC_IN_TE_Recal_Pile_V
+    global System_Vitesse_Max
+    global System_Ctrl_Circuits_Num
+    global System_Ctrl_Circuits_OK
+    global System_PLC_IN_RAZ_TE_Ctrl
+    global System_Hauteur_Pile_Select
+    # CustomCodeNode
+    # Scan_pal_vide.drl
+    #=========================== Cycle de Scan de la palette de Bacs Vides ======================
+    # CHANGE LOG :
+    #   V1.0 - Author : JCL - 23/06/2025    // Création
+    #   V2.0 - Author : JCL - 23/07/2025    // Passage en fonctionnement Dart Studio
+    #============================================================================================
+    
+    
+    #============================================================================================
+    
+    #---------------------------------------- Déclarations --------------------------------------
+    # Récupération variables Système
+    global System_HZ                            # Échange avec Automate : Liste des Hors Zone   (Sorties)
+    
+    global System_Hauteur_Z                     # Hauteur Z générale pour Scan + Positions au-dessus des piles
+    global System_Vitesse_Max           # Vitesse max en mm/s (pour paramètre "velx" mouvements "movej")
+    global System_01E02                         # Valeur Laser (en mm)
+    global System_Mesure_Pile_V                 # Liste des mesures Hauteur Piles bacs Vides
+    
+    global System_PLC_OUT_Step_Number           # Échange avec Automate : Sortie Step Number
+    
+    # Consigne Z de Scan palette Bacs Vides
+    Z_Scan_Bacs_Vides = System_Hauteur_Z
+    
+    # Quand la palette est vide, Le laser doit pointer sur le sol
+    Pos_Mesure_Pile1 = posx(1070, 310, Z_Scan_Bacs_Vides, 150, 180, 150)
+    Pos_Mesure_Pile2 = posx(1070, -310, Z_Scan_Bacs_Vides, 150, 180, 150)
+    Pos_Mesure_Pile3 = posx(560, 310, Z_Scan_Bacs_Vides, 150, 180, 150)
+    Pos_Mesure_Pile4 = posx(560, -310, Z_Scan_Bacs_Vides, 150, 180, 150)
+    
+    # Descente/Montée si première mesure Hors Plage (pile trop basse)
+    Dist_Mesure_Hors_Plage   = 600 # Ne pas toucher
+    Relatif_Mesure2_Descente = posx(0,0,-Dist_Mesure_Hors_Plage,0,0,0)
+    Relatif_Mesure2_Montee   = posx(0,0,Dist_Mesure_Hors_Plage,0,0,0)
+    
+    # RAZ Mesures hauteurs Piles bacs Vides
+    System_Mesure_Pile_V[0] = 0             # NOT USED
+    System_Mesure_Pile_V[1] = 0             # Mesure hauteur Pile bacs Vides n°1
+    System_Mesure_Pile_V[2] = 0             # Mesure hauteur Pile bacs Vides n°2
+    System_Mesure_Pile_V[3] = 0             # Mesure hauteur Pile bacs Vides n°3
+    System_Mesure_Pile_V[4] = 0             # Mesure hauteur Pile bacs Vides n°4
+    
+    #---------------------------------------- Paramétrage --------------------------------------
+    set_ref_coord(DR_BASE)              # Repère de référence
+    set_singularity_handling(DR_VAR_VEL)# Type d'évitement Singularités (variation de vitesse)
+    watch_collision_on(100)             # Niveau de sensibilité aux collisions (en %)
+    set_velj(60.0)                      # Vitesse Joint (en °/s)
+    set_accj(60.0)                      # Accélération Joint (en °/s²)
+    set_velx(250.0, 80.625)             # Vitesse Cartésienne (en mm/s | °/s)
+    set_accx(1000.0, 322.5)             # Accélération Cartésienne (en mm/s² | °/s²)
+    
+    set_tcp("Prehenseur")               # Sélection de l'Effecteur (Tool)
+    
+    #================================= Fonction Mesure Hauteur Pile =============================
+    def scan_pile(Num_pile, Pos_Mesure) :
+        # Récupération variables Système
+        global System_PLC_OUT_Error_code           # Échange avec Automate : Sortie Error code
+        global System_PLC_OUT_Step_Number          # Échange avec Automate : Sortie Step Number
+    
+        System_PLC_OUT_Step_Number = Num_pile      # Step Number
+    
+        # Positionnement au-dessus du bac + Stabilisation
+        movel(Pos_Mesure, ref = DR_BASE, mod = DR_MV_MOD_ABS)
+        wait(0.5)
+    
+        # Descente si mesure Hors plage (pile trop basse)
+        if System_01E02 == 9999 :
+            movel(Relatif_Mesure2_Descente, ref = DR_BASE, mod = DR_MV_MOD_REL)
+            wait(0.5)
+            Mesure_Laser = System_01E02 + abs(Relatif_Mesure2_Descente[2])
+            movel(Relatif_Mesure2_Montee, ref = DR_BASE, mod = DR_MV_MOD_REL)
+        else :
+            while System_01E02 == 200.0 or System_01E02 == 800.0 :       # BUG : Piège pour empêcher de relever une valeur NOK du Laser
+                wait(0.1)
+            Mesure_Laser = System_01E02
+    
+        return Mesure_Laser
+    
+    #============================================================================================
+    
+    #------------------------------------------ SÉQUENCE ----------------------------------------
+    System_PLC_OUT_Step_Number = 0                          # Step Number
+    
+    # Vérification état Préhenseur
+    while System_TE_Prise == ON :
+        System_PLC_OUT_Error_code = 14                      # Error Number
+        tp_popup("Scan impossible, Préhenseur non vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+        exit()
+    
+    System_HZ[1] = OFF                                      # Hors Zone Palette bacs vides
+    
+    # Signal API : Hauteur Z de Scan palette Bacs Vides
+    set_output_register_int(8, Z_Scan_Bacs_Vides)
+    
+    # Positionnement au-dessus de la première pile
+    movel(Pos_Mesure_Pile4, ref = DR_BASE, mod = DR_MV_MOD_ABS)
+    
+    # Mesure hauteur Pile Bacs Vides n°4
+    System_Mesure_Pile_V[4] = scan_pile(4, Pos_Mesure_Pile4)
+    
+    # Mesure hauteur Pile Bacs Vides n°3
+    System_Mesure_Pile_V[3] = scan_pile(3, Pos_Mesure_Pile3)
+    
+    # Mesure hauteur Pile Bacs Vides n°1
+    System_Mesure_Pile_V[1] = scan_pile(1, Pos_Mesure_Pile1)
+    
+    # Mesure hauteur Pile Bacs Vides n°2
+    System_Mesure_Pile_V[2] = scan_pile(2, Pos_Mesure_Pile2)
+    
+    #tp_log("Mesure hauteur Pile 1 = " +str(System_Mesure_Pile_V[1]))
+    #tp_log("Mesure hauteur Pile 2 = " +str(System_Mesure_Pile_V[2]))
+    #tp_log("Mesure hauteur Pile 3 = " +str(System_Mesure_Pile_V[3]))
+    #tp_log("Mesure hauteur Pile 4 = " +str(System_Mesure_Pile_V[4]))
+    
+    #---------------------------------------- Fin Séquence --------------------------------------
+    # Retour en Home
+    
+    # CallNode
+    global _alias_sub_name_init_mouvements
+    _alias_sub_name_init_mouvements()
+    
+_alias_sub_name_scan_pal_vide = scan_pal_vide
+
+def scan_pal_plein():
+    global System_Pos_Homej
+    global System_Pos_Homex
+    global System_01E02
+    global System_Hauteur_Z
+    global System_Mesure_Pile_V
+    global System_Mesure_Pile_P
+    global System_TE_Prise
+    global System_Step_Test
+    global System_HZ
+    global System_EV
+    global System_OR
+    global System_PLC_OUT_Echo_code_Cycle
+    global System_PLC_OUT_Echo_code_Pos
+    global System_PLC_OUT_Att_Cycle_code
+    global System_PLC_OUT_Error_code
+    global System_PLC_OUT_Step_Number
+    global System_PLC_OUT_Life_Int
+    global System_PLC_OUT_Cycle_End
+    global System_PLC_IN_Cycle_code
+    global System_PLC_IN_Position_code
+    global System_PLC_IN_Life_Int
+    global System_PLC_IN_Start_Cycle
+    global System_I_Vacc_General
+    global System_I_Vacc_Circuit1
+    global System_I_Vacc_Circuit2
+    global System_I_Vacc_Circuit3
+    global System_I_Err_Laser
+    global System_PLC_IN_Ack
+    global System_PLC_IN_TE_Recal_Pile_V
+    global System_Vitesse_Max
+    global System_Ctrl_Circuits_Num
+    global System_Ctrl_Circuits_OK
+    global System_PLC_IN_RAZ_TE_Ctrl
+    global System_Hauteur_Pile_Select
+    # CustomCodeNode
+    # Scan_pal_plein.drl
+    #========================== Cycle de Scan de la palette de Bacs Pleins ======================
+    # CHANGE LOG :
+    #   V1.0 - Author : JCL - 30/06/2025    // Création
+    #   V2.0 - Author : JCL - 23/07/2025    // Passage en fonctionnement Dart Studio
+    #============================================================================================
+    
+    
+    #============================================================================================
+    
+    #---------------------------------------- Déclarations --------------------------------------
+    # Récupération variables Système
+    global System_HZ                            # Échange avec Automate : Liste des Hors Zone   (Sorties)
+    
+    global System_Hauteur_Z                     # Hauteur Z générale pour Scan + Positions au-dessus des piles
+    global System_Vitesse_Max           # Vitesse max en mm/s (pour paramètre "velx" mouvements "movej")
+    global System_01E02                         # Valeur Laser (en mm)
+    global System_Mesure_Pile_P                 # Liste des mesures Hauteur Piles bacs Pleins
+    
+    global System_PLC_OUT_Step_Number           # Échange avec Automate : Sortie Step Number
+    
+    # Consigne Z de Scan palette Bacs Pleins
+    Z_Scan_Bacs_Pleins = System_Hauteur_Z
+    
+    # Quand la palette est vide, Le laser doit pointer sur le sol
+    Pos_Mesure_Pile1 = posx(-505, -410, Z_Scan_Bacs_Pleins, 150, 180, 150)
+    Pos_Mesure_Pile2 = posx(Pos_Mesure_Pile1[0]      , Pos_Mesure_Pile1[1] + 620, Z_Scan_Bacs_Pleins, 150, 180, 150)
+    Pos_Mesure_Pile3 = posx(Pos_Mesure_Pile1[0] - 510, Pos_Mesure_Pile1[1] - 30, Z_Scan_Bacs_Pleins, 150, 180, 240)
+    Pos_Mesure_Pile4 = posx(Pos_Mesure_Pile1[0] - 510, Pos_Mesure_Pile1[1] + 375, Z_Scan_Bacs_Pleins, 150, 180, 240)
+    Pos_Mesure_Pile5 = posx(Pos_Mesure_Pile1[0] - 510, Pos_Mesure_Pile1[1] + 785, Z_Scan_Bacs_Pleins, 150, 180, 240)
+    
+    # Descente/Montée si première mesure Hors Plage (pile trop basse)
+    Dist_Mesure_Hors_Plage   = 550 # Ne pas toucher
+    Relatif_Mesure2_Descente = posx(0,0,-Dist_Mesure_Hors_Plage,0,0,0)
+    Relatif_Mesure2_Montee   = posx(0,0,Dist_Mesure_Hors_Plage,0,0,0)
+    
+    # RAZ Mesures hauteurs Piles bacs Pleins
+    System_Mesure_Pile_P[0] = 0             #
+    System_Mesure_Pile_P[1] = 0             # Mesure hauteur Pile bacs Pleins n°1
+    System_Mesure_Pile_P[2] = 0             # Mesure hauteur Pile bacs Pleins n°2
+    System_Mesure_Pile_P[3] = 0             # Mesure hauteur Pile bacs Pleins n°3
+    System_Mesure_Pile_P[4] = 0             # Mesure hauteur Pile bacs Pleins n°4
+    System_Mesure_Pile_P[5] = 0             # Mesure hauteur Pile bacs Pleins n°5
+    
+    #---------------------------------------- Paramétrage --------------------------------------
+    set_ref_coord(DR_BASE)              # Repère de référence
+    set_singularity_handling(DR_VAR_VEL)# Type d'évitement Singularités (variation de vitesse)
+    watch_collision_on(100)             # Niveau de sensibilité aux collisions (en %)
+    set_velj(60.0)                      # Vitesse Joint (en °/s)
+    set_accj(60.0)                      # Accélération Joint (en °/s²)
+    set_velx(250.0, 80.625)             # Vitesse Cartésienne (en mm/s | °/s)
+    set_accx(1000.0, 322.5)             # Accélération Cartésienne (en mm/s² | °/s²)
+    
+    set_tcp("Prehenseur")               # Sélection de l'Effecteur (Tool)
+    
+    #================================= Fonction Mesure Hauteur Pile =============================
+    def scan_pile(Num_pile, Pos_Mesure) :
+        # Récupération variables Système
+        global System_PLC_OUT_Error_code            # Échange avec Automate : Sortie Error code
+        global System_PLC_OUT_Step_Number           # Échange avec Automate : Sortie Step Number
+    
+        System_PLC_OUT_Step_Number = Num_pile       # Step Number
+    
+        # Données physiques mesurée
+        Mesure_Pile_Vide = 1540                     # Mesure si Pile Vide (pour dépose sur palette)
+    
+        # Positionnement au-dessus du bac + Stabilisation
+        movel(Pos_Mesure, ref = DR_BASE, mod = DR_MV_MOD_ABS)
+        wait(0.5)
+    
+        # Descente si mesure Hors plage (pile trop basse)
+        if System_01E02 == 9999 :
+            movel(Relatif_Mesure2_Descente, ref = DR_BASE, mod = DR_MV_MOD_REL)
+            wait(0.5)
+            Mesure_Laser = System_01E02 + abs(Relatif_Mesure2_Descente[2])
+            movel(Relatif_Mesure2_Montee, ref = DR_BASE, mod = DR_MV_MOD_REL)
+        else :
+            while System_01E02 == 200.0 or System_01E02 == 800.0 :       # BUG : Piège pour empêcher de relever une valeur NOK du Laser
+                wait(0.1)
+            Mesure_Laser = System_01E02
+    
+        # Correction valeur mesurée si Pile Vide (pour dépose sur palette)
+        if Mesure_Laser > 1380 :
+            Mesure_Laser = Mesure_Pile_Vide
+    
+        return Mesure_Laser
+    
+    #============================================================================================
+    
+    #------------------------------------------ SÉQUENCE ----------------------------------------
+    System_PLC_OUT_Step_Number = 0                          # Step Number
+    
+    # Vérification état Préhenseur
+    while System_TE_Prise == ON :
+        System_PLC_OUT_Error_code = 14                      # Error Number
+        tp_popup("Scan impossible, Préhenseur non vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+        exit()
+    
+    System_HZ[2] = OFF                                      # Hors Zone Palette bacs pleins
+    
+    # Signal API : Hauteur Z de Scan palette Bacs Pleins
+    set_output_register_int(9, Z_Scan_Bacs_Pleins)
+    
+    # Positionnement au-dessus de la première pile
+    movel(Pos_Mesure_Pile1, ref = DR_BASE, mod = DR_MV_MOD_ABS)
+    
+    # Mesure hauteur Pile Bacs Pleins n°1
+    System_Mesure_Pile_P[1] = scan_pile(1, Pos_Mesure_Pile1)
+    
+    # Mesure hauteur Pile Bacs Pleins n°2
+    System_Mesure_Pile_P[2] = scan_pile(2, Pos_Mesure_Pile2)
+    
+    # Mesure hauteur Pile Bacs Pleins n°5
+    System_Mesure_Pile_P[5] = scan_pile(5, Pos_Mesure_Pile5)
+    
+    # Mesure hauteur Pile Bacs Pleins n°4
+    System_Mesure_Pile_P[4] = scan_pile(4, Pos_Mesure_Pile4)
+    
+    # Mesure hauteur Pile Bacs Pleins n°3
+    System_Mesure_Pile_P[3] = scan_pile(3, Pos_Mesure_Pile3)
+    
+    #tp_log("Mesure hauteur Pile 1 = " +str(System_Mesure_Pile_P[1]))
+    #tp_log("Mesure hauteur Pile 2 = " +str(System_Mesure_Pile_P[2]))
+    #tp_log("Mesure hauteur Pile 3 = " +str(System_Mesure_Pile_P[3]))
+    #tp_log("Mesure hauteur Pile 4 = " +str(System_Mesure_Pile_P[4]))
+    #tp_log("Mesure hauteur Pile 5 = " +str(System_Mesure_Pile_P[5]))
+    
+    #---------------------------------------- Fin Séquence --------------------------------------
+    # Retour en Home
+    
+    # CallNode
+    global _alias_sub_name_init_mouvements
+    _alias_sub_name_init_mouvements()
+    
+_alias_sub_name_scan_pal_plein = scan_pal_plein
+
+def prise_bac_vide():
+    global System_Pos_Homej
+    global System_Pos_Homex
+    global System_01E02
+    global System_Hauteur_Z
+    global System_Mesure_Pile_V
+    global System_Mesure_Pile_P
+    global System_TE_Prise
+    global System_Step_Test
+    global System_HZ
+    global System_EV
+    global System_OR
+    global System_PLC_OUT_Echo_code_Cycle
+    global System_PLC_OUT_Echo_code_Pos
+    global System_PLC_OUT_Att_Cycle_code
+    global System_PLC_OUT_Error_code
+    global System_PLC_OUT_Step_Number
+    global System_PLC_OUT_Life_Int
+    global System_PLC_OUT_Cycle_End
+    global System_PLC_IN_Cycle_code
+    global System_PLC_IN_Position_code
+    global System_PLC_IN_Life_Int
+    global System_PLC_IN_Start_Cycle
+    global System_I_Vacc_General
+    global System_I_Vacc_Circuit1
+    global System_I_Vacc_Circuit2
+    global System_I_Vacc_Circuit3
+    global System_I_Err_Laser
+    global System_PLC_IN_Ack
+    global System_PLC_IN_TE_Recal_Pile_V
+    global System_Vitesse_Max
+    global System_Ctrl_Circuits_Num
+    global System_Ctrl_Circuits_OK
+    global System_PLC_IN_RAZ_TE_Ctrl
+    global System_Hauteur_Pile_Select
+    # CustomCodeNode
+    # Prise_Bac_Vide.drl
+    #================================== Cycle de Prise Bac Vide =================================
+    # CHANGE LOG :
+    #   V1.0 - Author : JCL - 23/06/2025    // Création
+    #   V2.0 - Author : JCL - 23/07/2025    // Passage en fonctionnement Dart Studio
+    #   V2.1 - Author : JCL - 18/08/2025    // Ajout gestion Prise directe (sans recalage)
+    #   V2.2 - Author : JCL - 23/10/2025    // Ajout variable Hauteur Pile Sélectionnée (pour choix d'évitement singularités)
+    #============================================================================================
+    
+    
+    #============================================================================================
+    
+    #---------------------------------------- Déclarations --------------------------------------
+    # Récupération variables Système
+    global System_HZ                            # Échange avec Automate : Liste des Hors Zone   (Sorties)
+    
+    global System_Hauteur_Z                     # Hauteur Z générale pour Scan + Positions au-dessus des piles
+    global System_Vitesse_Max           # Vitesse max en mm/s (pour paramètre "velx" mouvements "movej")
+    global System_01E02                         # Valeur Laser (en mm)
+    global System_Mesure_Pile_V                 # Liste des mesures Hauteur Piles bacs Vides
+    
+    global System_PLC_OUT_Error_code            # Échange avec Automate : Sortie Error code
+    global System_PLC_OUT_Step_Number           # Échange avec Automate : Sortie Step Number
+    
+    global System_PLC_IN_TE_Recal_Pile_V        # Échange avec Automate : Entrées TE Recalage piles Bacs vides (pour positionnement direct)
+    
+    # Paramètres Approche Z Avant Recalage
+    Dist_recalage    = 500                                      # Position Z de Recalage Piles
+    Relatif_Descente = posx(0,0,-(Dist_recalage + 100),0,0,0)   # Point relatif à ne pas atteindre (arrêt sur valeur laser)
+    
+    # Paramètres Approche Z Après Recalage
+    Relatif_Approche = posx(0,0,-(Dist_recalage - 40),0,0,0)    # Point relatif après recalage, descente avant Prise
+    
+    # Données géométriques Bacs Vides
+    Delta_bac_Vide  = 80                                    # Différence de hauteur entre 2 bacs (en mm)
+    Largeur_Bac     = 380                                   # Largeur des bacs vides (plus petit côté, en mm)
+    Longueur_Bac    = 540                                   # Longueur des bacs vides (entre rebords intérieurs, en mm)
+    Profondeur_Bac  = 270                                   # Profondeur des bacs vides (en mm)
+    Detect_bord_bac = Dist_recalage - Profondeur_Bac + 70    # Profondeur pour détection bord de bac
+    
+    Dist_Rech_Largeur   = (Largeur_Bac / 2) + 100           # Distance à parcourir pendant recherche Bord Largeur
+    Dist_Rech_Longueur  = (Longueur_Bac / 2) + 100          # Distance à parcourir pendant recherche Bord Largeur
+    
+    # Paramètres Forçage Config' Robot (Solutions)
+    #Point_Config_j  = posj(0, 7, 100, 0, 70, 0)            # Position Articulaire de Forçage Config' Robot
+    Point_Config_x  = posx(650, 0, 550, 60, 180, 150)       # Position Cartésienne de Forçage Config' Robot
+    
+    # Paramètres SANS Recalage (Positionnement direct)
+    Delta_Z_Laser   = 70                                    # Différence de hauteur Préhenseur/Laser
+    Rech_DIR_Rapide = Profondeur_Bac + Delta_Z_Laser + 200  # Valeur Laser pour recherche de hauteur pile Rapide
+    Rech_DIR_Lent   = Profondeur_Bac + Delta_Z_Laser + 10   # Valeur Laser pour recherche de hauteur pile Lent
+    Relatif_DIR     = posx(0,0,-(Profondeur_Bac - 30),0,0,0)# Point relatif Descente après recherche hauteur pile
+    
+    
+    
+    # Paramètres Recalage Pile n°1
+    Pos_Recal_Pile1 = posx(1060, 200, System_Hauteur_Z, 0, 180, 90)     # Position X/Y de Recalage Pile n°1
+    Relatif_Recal_Pile1_P1 = posx(-100,-Dist_Rech_Largeur,0,0,0,0)      # Point relatif Recherche Point 1 (à ne pas atteindre)
+    Relatif_Recal_Pile1_P2 = posx(+100,-Dist_Rech_Largeur,0,0,0,0)      # Point relatif Recherche Point 2 (à ne pas atteindre)
+    Relatif_Recal_Pile1_P3 = posx(-Dist_Rech_Longueur,0,0,0,0,0)        # Point relatif Recherche Point 3 (à ne pas atteindre)
+    Pos_Centre_Bac1 = posx((Largeur_Bac/2)+10, Longueur_Bac/2, 0,180,180,180)# Position Théorique Centre bac (avec repère Pile n°1)
+    Pos_DIR_Bac1    = trans(Pos_Centre_Bac1, [0,0,100,0,0,0])           # Position SANS recalage, avant recherche hauteur pile
+    
+    
+    
+    # Paramètres Recalage Pile n°2
+    Pos_Recal_Pile2 = posx(1060, -200, System_Hauteur_Z, 0, 180, 90)    # Position X/Y de Recalage Pile n°1
+    Relatif_Recal_Pile2_P1 = posx(-Dist_Rech_Longueur,+100,0,0,0,0)     # Point relatif Recherche Point 1 (à ne pas atteindre)
+    Relatif_Recal_Pile2_P2 = posx(-Dist_Rech_Longueur,-200,0,0,0,0)     # Point relatif Recherche Point 2 (à ne pas atteindre)
+    Relatif_Recal_Pile2_P3 = posx(0,Dist_Rech_Largeur,0,0,0,0)          # Point relatif Recherche Point 3 (à ne pas atteindre)
+    Pos_Centre_Bac2 = posx((Longueur_Bac/2)-10, Largeur_Bac/2, 0,90,180,0)   # Position Théorique Centre bac (avec repère Pile n°2)
+    Pos_DIR_Bac2    = trans(Pos_Centre_Bac2, [0,0,100,0,0,0])           # Position SANS recalage, avant recherche hauteur pile
+    
+    
+    
+    # Paramètres Recalage Pile n°3
+    Pos_Recal_Pile3 = posx(550, 200, System_Hauteur_Z, 150, 180, 60)    # Position X/Y de Recalage Pile n°3
+    Relatif_Recal_Pile3_P1 = posx(Dist_Rech_Longueur,-100,0,0,0,0)      # Point relatif Recherche Point 1 (à ne pas atteindre)
+    Relatif_Recal_Pile3_P2 = posx(Dist_Rech_Longueur,+200,0,0,0,0)      # Point relatif Recherche Point 2 (à ne pas atteindre)
+    Relatif_Recal_Pile3_P3 = posx(0,-Dist_Rech_Largeur,0,0,0,0)         # Point relatif Recherche Point 3 (à ne pas atteindre)
+    Pos_Centre_Bac3 = posx(Longueur_Bac/2, Largeur_Bac/2, 0,90,180,0)   # Position Théorique Centre bac (avec repère Pile n°3)
+    Pos_DIR_Bac3    = trans(Pos_Centre_Bac3, [0,0,100,0,0,0])           # Position SANS recalage, avant recherche hauteur pile
+    
+    
+    
+    # Paramètres Recalage Pile n°4
+    Pos_Recal_Pile4 = posx(550, -200, System_Hauteur_Z, 150, 180, 60)   # Position X/Y de Recalage Pile n°4
+    Relatif_Recal_Pile4_P1 = posx(+100,Dist_Rech_Largeur,0,0,0,0)       # Point relatif Recherche Point 1 (à ne pas atteindre)
+    Relatif_Recal_Pile4_P2 = posx(-100,Dist_Rech_Largeur,0,0,0,0)       # Point relatif Recherche Point 2 (à ne pas atteindre)
+    Relatif_Recal_Pile4_P3 = posx(Dist_Rech_Longueur,0,0,0,0,0)         # Point relatif Recherche Point 3 (à ne pas atteindre)
+    Pos_Centre_Bac4 = posx(Largeur_Bac/2, Longueur_Bac/2, 0,180,180,180)  # Position Théorique Centre bac (avec repère Pile n°4)
+    if System_Mesure_Pile_V[4] > 1170 :                                 # Modification de la position de Prise pour Bacs n°5 à n°1
+        Pos_Centre_Bac4[5] = 180                                        # Rz = 180
+    Pos_DIR_Bac4    = trans(Pos_Centre_Bac4, [0,0,100,0,0,0])           # Position SANS recalage, avant recherche hauteur pile
+    
+    
+    
+    #---------------------------------------- Paramétrage --------------------------------------
+    set_ref_coord(DR_BASE)              # Repère de référence
+    #set_singularity_handling(DR_VAR_VEL)# Type d'évitement Singularités (variation de vitesse)
+    set_singularity_handling(DR_AVOID)# Type d'évitement Singularités (évitement automatique)
+    watch_collision_on(100)             # Niveau de sensibilité aux collisions (en %)
+    set_velj(60.0)                      # Vitesse Joint (en °/s)
+    set_accj(60.0)                      # Accélération Joint (en °/s²)
+    set_velx(250.0, 80.625)             # Vitesse Cartésienne (en mm/s | °/s)
+    set_accx(1000.0, 322.5)             # Accélération Cartésienne (en mm/s² | °/s²)
+    
+    #========================== Fonction Recherche pile la plus Haute ===========================
+    def RECHERCHE_MINI(liste_mesures) :
+        # Récupération variables Système
+        global System_PLC_OUT_Error_code        # Échange avec Automate : Sortie Error code
+    
+        # Paramétrage boucle de recherche
+        Index_debut     = 1                     # Index début de recherche
+        Nbr_elements    = 5                     # Nombre d'élèments dans la liste
+    
+        # Initialisation 1er élèment de la liste comme Minimum
+        Index_Mini      = Index_debut                   # Index Tableau valeur mini
+        Val_Mini        = liste_mesures[Index_Mini]     # Valeur de mesure associée
+    
+        # Données physiques mesurée
+        Delta_Bac       = 80 - 40               # Différence de hauteur entre 2 bacs vides
+        Mesure_0_Bac    = 1540 + 10             # Mesure si Pile de 0 bac (détection palette)
+        Mesure_1_Bac    = 1540                  # Mesure si Pile de 1 bac
+    
+        # Boucle de recherche
+        for i in range(Index_debut, Nbr_elements) :
+            if liste_mesures[i] < (Val_Mini - Delta_Bac) and liste_mesures[i] != 0 :
+                Index_Mini = i
+                Val_Mini = liste_mesures[i]
+    
+        # Détection Pile Vide
+        if Val_Mini >= Mesure_0_Bac :
+            System_PLC_OUT_Error_code = 5       # Error Number
+            tp_popup("Palette bacs Vides Terminée (Palette Vide)", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+            exit()
+    
+        return Index_Mini                       # Retour Index tableau Pile la plus Haute
+    
+    #============================================================================================
+    #============================= Fonction Mise en position Recalage ===========================
+    def POSITIONNEMENT_RECAL(Pos_Centre_Pile, Val_Mesure_Laser, Posj_Config, Solution) :
+        # Récupération variables Système
+        global System_PLC_OUT_Error_code        # Échange avec Automate : Sortie Error code
+    
+        set_tcp("Laser")                        # Sélection Effecteur (Tool)
+    
+        # Position Forçage Config' Robot (Sol = Solution, Config' Robot)
+        movejx(Posj_Config, ref = DR_BASE, mod = DR_MV_MOD_ABS, r = 50, ra= DR_MV_RA_DUPLICATE, sol = Solution, velx = System_Vitesse_Max)
+    
+        # Positionnement au Centre de la Pile
+        movel(Pos_Centre_Pile, ra= DR_MV_RA_DUPLICATE)
+    
+        # Approche avant Recherche Hauteur recalage
+        if Val_Mesure_Laser > (Dist_recalage + 100) :
+            Dist_Approche = Val_Mesure_Laser - (Dist_recalage + 100)    # Calcul Approche suivant Mesure Laser
+            Relatif_Pos_Approche = posx(0,0, -Dist_Approche ,0,0,0)
+            movel(Relatif_Pos_Approche, ref = DR_BASE, mod = DR_MV_MOD_REL)
+    
+        # Démarrage recherche Hauteur recalage (mouvement asynchrone)
+        amovel(Relatif_Descente, vel = 50, ref = DR_BASE, mod = DR_MV_MOD_REL)
+    
+        #Boucle scutation valeur Laser
+        while System_01E02 > Dist_recalage and System_01E02 != 9999 :
+            if check_motion() == 0 :                                    # 0 = Arrêté / 1 = en calcul / 2 = en mouvement
+                # Si point atteint : Fond de bac non détecté
+                System_PLC_OUT_Error_code = 6                           # Error Number
+                tp_popup("Echec recherche Laser pour Hauteur Recalage", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+                exit()
+        # Si Fond de bac détecté : arrêt
+        stop(DR_SSTOP)
+    
+        # Sauvegarde point de Rebouclage Recalage
+        Point_Rebouclage, sol = get_current_posx()
+        tp_log("Position Rebouclage recalage atteinte")
+    
+        return Point_Rebouclage                 # Retour Point de Rebouclage Recalage
+    
+    #============================================================================================
+    #============================ Fonction Recherche Point de Recalage ==========================
+    def RECHERCHE_POINT_RECAL(Num_Point, Pos_Reboucl, Relatif_Async) :
+        # Récupération variables Système
+        global System_PLC_OUT_Error_code        # Échange avec Automate : Sortie Error code
+    
+        set_tcp("Laser")                        # Sélection Effecteur (Tool)
+    
+        # Démarrage recherche Bord de bac (mouvement asynchrone)
+        amovel(Relatif_Async, vel = 50, ref = DR_BASE, mod = DR_MV_MOD_REL)
+    
+        #Boucle scutation valeur Laser
+        while System_01E02 > Detect_bord_bac and System_01E02 != 9999 :
+            if check_motion() == 0 :        # 0 = Arrêté / 1 = en calcul / 2 = en mouvement
+                # Si point atteint : Bord de bac non détecté
+                System_PLC_OUT_Error_code = 7                           # Error Number
+                tp_popup("Echec recherche Laser pour Recalage", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+                exit()
+        # Si Bord de bac détecté : arrêt
+        stop(DR_SSTOP)
+    
+        # Sauvegarde point de Recalage
+        Point_Recalage, sol = get_current_posx(DR_BASE)
+    
+        # Positionnement au Rebouclage recalage
+        movel(Pos_Reboucl, ref = DR_BASE, mod = DR_MV_MOD_ABS)
+    
+        return Point_Recalage               # Retour Point de recalage Sauvegardé
+    
+    #============================================================================================
+    #============================== Fonction Recalage Repère Travail ============================
+    def RECALAGE_REPERE(ID_Repere, P1, P2, P3) :
+        # P1 et P2 sur Axe X
+        # P3 sur Axe Y
+    
+        # Calcul du Point d'Origine
+        vec_x  = [P2[i]-P1[i] for i in range(3)]            # Vecteur Axe X (passant par P1 et P2)
+        norm_x = sqrt(sum(v*v for v in vec_x))              # Norme du Vecteur X
+        ux     = [v/norm_x for v in vec_x]                  # Vecteur unitaire
+        t      = sum((P3[i]-P1[i])*ux[i] for i in range(3)) # Produit Scalaire
+        P0     = [P1[i] + t*ux[i] for i in range(3)]        # POINT D'ORIGINE DU REPERE
+    
+        Origine = posx(P0[0], P0[1], P0[2], 150, 180, 150)  # Point d'origine du repère complété
+    
+        # Calcul du Repère
+        Calc_Repere = calc_coord(P1, P2, P3, Origine, ref = DR_BASE, mod=0)
+        # Affectation du repère calculé au Repère USER (Workcell)
+        overwrite_user_cart_coord(ID_Repere, Calc_Repere, ref=DR_BASE, apply_mod=DR_PERMANENT)
+        # Sélection du repère de référence
+        set_ref_coord(ID_Repere)
+    
+    #============================================================================================
+    #========================== Fonction Recalage Robot + Approche Prise ========================
+    def RECALAGE_ROBOT(Pos_Centre_bac, Relatif_Approche, Lissage) :
+        set_tcp("Prehenseur")                   # Sélection Effecteur (Tool)
+    
+        if System_Hauteur_Pile_Select > 1180 :          # L'évitement ne fonctionne pas sur les bacs du bas
+            # Pile 10 bacs = 820 (+80 par bac)
+            set_singularity_handling(DR_VAR_VEL)        # Type d'évitement Singularités (variation de vitesse)
+    
+        if Lissage == True :                    # Lissage recentrage + descente
+            movel(Pos_Centre_bac, r = 100, mod = DR_MV_MOD_ABS)
+            # Approche du Fond du bac
+            movel(Relatif_Approche, vel = 100, ra= DR_MV_RA_DUPLICATE, mod = DR_MV_MOD_REL)
+    
+        if Lissage == False :                   # Pas de Lissage recentrage + descente
+            movel(Pos_Centre_bac, mod = DR_MV_MOD_ABS)
+            # Approche du Fond du bac
+            movel(Relatif_Approche, vel = 100, mod = DR_MV_MOD_REL)
+    
+    #============================================================================================
+    #===================== Fonction Positionnement Direct Robot + Approche Prise ================
+    def POSISIONNEMENT_DIR_ROBOT(Posj_Config, Pos_Direct_bac, ID_Repere, Solution) :
+        set_tcp("Prehenseur")                   # Sélection Effecteur (Tool)
+    
+        if System_Hauteur_Pile_Select > 1180 :          # L'évitement ne fonctionne pas sur les bacs du bas
+            # Pile 10 bacs = 820 (+80 par bac)
+            set_singularity_handling(DR_VAR_VEL)        # Type d'évitement Singularités (variation de vitesse)
+    
+        # Position Forçage Config' Robot (Sol = Solution, Config' Robot)
+        movejx(Posj_Config, ref = DR_BASE, mod = DR_MV_MOD_ABS, sol = Solution, velx = System_Vitesse_Max)
+    
+        # Positionnement direct au-dessus de la pile
+        set_ref_coord(ID_Repere)
+        movejx(Pos_Direct_bac, mod = DR_MV_MOD_ABS, sol = Solution, velx = System_Vitesse_Max)
+    
+        # Récupération position actuelle pour distance asynchrone
+        Pos_actu, sol   = get_current_posx(DR_BASE)
+        Z_Palette       = -1000                         # Z palette bacs vides
+        Dist_Asynch     = abs(Z_Palette - Pos_actu[2])  # Distance de recherche Hauteur Pile
+    
+        # Approche Rapide de la pile
+        if System_01E02 > Rech_DIR_Rapide :
+            # Démarrage recherche Rapide Hauteur Pile (mouvement asynchrone, point à ne pas atteindre)
+            amovel([0,0,-Dist_Asynch,0,0,0], vel = 150, ref = DR_BASE, mod = DR_MV_MOD_REL)
+            #Boucle scutation valeur Laser
+            while System_01E02 > Rech_DIR_Rapide or (System_01E02 == 200 or System_01E02 == 9999) :
+                wait(0.1)
+            stop(DR_SSTOP)
+    
+        # Récupération position actuelle pour distance asynchrone
+        Pos_actu, sol   = get_current_posx(DR_BASE)
+        Z_Palette       = -1000                         # Z palette bacs vides
+        Dist_Asynch     = abs(Z_Palette - Pos_actu[2])  # Distance de recherche Hauteur Pile
+    
+        # Approche Lente de la pile
+        if System_01E02 > Rech_DIR_Lent :
+            # Démarrage recherche Lente Hauteur Pile (mouvement asynchrone, point à ne pas atteindre)
+            amovel([0,0,-Dist_Asynch,0,0,0], vel = 50, ref = DR_BASE, mod = DR_MV_MOD_REL)
+            #Boucle scutation valeur Laser
+            while System_01E02 > Rech_DIR_Lent or (System_01E02 == 200 or System_01E02 == 9999) :
+                wait(0.1)
+            stop(DR_SSTOP)
+    
+        # Approche du Fond du bac
+        movel(Relatif_DIR, vel = 100, ref = ID_Repere, mod = DR_MV_MOD_REL)
+    
+    #============================================================================================
+    
+    #------------------------------------------ SÉQUENCE ----------------------------------------
+    System_PLC_OUT_Step_Number = 0                      # Step Number
+    
+    # Vérification état Préhenseur
+    while System_TE_Prise == ON :
+        System_PLC_OUT_Error_code = 15                  # Error Number
+        tp_popup("Prise impossible, Préhenseur non vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+        exit()
+    
+    # Recherche Pile la plus Haute (valeur laser la plus basse)
+    Num_pile_Haute              = RECHERCHE_MINI(System_Mesure_Pile_V)
+    System_Hauteur_Pile_Select  = System_Mesure_Pile_V[Num_pile_Haute]
+    tp_log("Numero de pile la plus Haute : " +str(Num_pile_Haute) + "\n Hauteur pile mesuree = " +str(System_Hauteur_Pile_Select))
+    
+    System_HZ[1] = OFF                                  # Hors Zone Palette bacs vides
+    
+    System_PLC_OUT_Step_Number = Num_pile_Haute         # Step Number (Num pile Prise)
+    
+    Solution = 2                                        # Solution = Config' Robot = 2 (Épaule à gauche/Coude Dessus/Poignet No Flip)
+    
+    # ========================== PILE N° 1 ==============================
+    if Num_pile_Haute == 1 :
+        # Forçage solution robot (Config' robot) suivant Hauteur Pile
+        if System_Mesure_Pile_V[1] < 1250 :     # Bacs n°11 à n°4 :     Config' Robot = 2 (Épaule à gauche/Coude Dessus/Poignet No Flip)
+                Solution = 2
+        else :                                  # Bacs n°3 à n°1 :      Config' Robot = 3 (Épaule à gauche/Coude Dessus/Poignet Flip)
+                Solution = 3
+    
+        if System_PLC_IN_TE_Recal_Pile_V[1] == OFF :
+            # Mise en position Rebouclage recalage (au centre théorique, à la distance de recalage)
+            Pos_Reboucl_Recal = POSITIONNEMENT_RECAL(Pos_Recal_Pile1, System_Mesure_Pile_V[1], Point_Config_x, Solution)
+            # Recherche Point n°1 (Origine repère, sur Axe X)
+            P1_Recalage = RECHERCHE_POINT_RECAL(1, Pos_Reboucl_Recal, Relatif_Recal_Pile1_P1)
+            # Recherche Point n°2 (Axe X)
+            P2_Recalage = RECHERCHE_POINT_RECAL(2, Pos_Reboucl_Recal, Relatif_Recal_Pile1_P2)
+            # Recherche Point n°3 (Axe Y)
+            P3_Recalage = RECHERCHE_POINT_RECAL(3, Pos_Reboucl_Recal, Relatif_Recal_Pile1_P3)
+            # Recalage repère de Travail
+            RECALAGE_REPERE(101, P1_Recalage, P2_Recalage, P3_Recalage)
+            # Positionnement au Centre du Bac Vide
+            RECALAGE_ROBOT(Pos_Centre_Bac1, Relatif_Approche, Lissage = True)
+    
+        else :
+            POSISIONNEMENT_DIR_ROBOT(Point_Config_x, Pos_DIR_Bac1, 101, Solution)
+    
+        # Appel FONCTION de Recherche Force et Aspiration pour Prise Bac Vide
+        gripper_prise_vide()
+    
+        # Retrait 1 Bac sur Pile n°1, Hauteur de mesure à incrémenter
+        if System_Mesure_Pile_V[1] < 1440 :                                         # Correction hauteur pile pour Bacs n°11 à n°2
+            System_Mesure_Pile_V[1] = System_Mesure_Pile_V[1] + Delta_bac_Vide
+        elif System_Mesure_Pile_V[1] < 1540 :                                       # Correction hauteur pile pour Bac n°1
+            System_Mesure_Pile_V[1] = 1540
+        else :                                                                      # Correction hauteur pile pour Dernier Bac
+            System_Mesure_Pile_V[1] = 10599
+    
+    
+    # ========================== PILE N° 2 ==============================
+    elif Num_pile_Haute == 2 :
+        # Forçage solution robot (Config' robot) suivant Hauteur Pile
+        if System_Mesure_Pile_V[2] < 1090 :     # Bacs n°11 à n°6 :     Config' Robot = 2 (Épaule à gauche/Coude Dessus/Poignet No Flip)
+            Solution = 2
+        else :                                  # Bacs n°5 à n°1 :      Config' Robot = 3 (Épaule à gauche/Coude Dessus/Poignet Flip)
+            Solution = 3
+    
+        if System_PLC_IN_TE_Recal_Pile_V[2] == OFF :
+            # Mise en position Rebouclage recalage (au centre théorique, à la distance de recalage)
+            Pos_Reboucl_Recal = POSITIONNEMENT_RECAL(Pos_Recal_Pile2, System_Mesure_Pile_V[2], Point_Config_x, Solution)
+            # Recherche Point n°1 (Origine repère, sur Axe X)
+            P1_Recalage = RECHERCHE_POINT_RECAL(1, Pos_Reboucl_Recal, Relatif_Recal_Pile2_P1)
+            # Recherche Point n°2 (Axe X)
+            P2_Recalage = RECHERCHE_POINT_RECAL(2, Pos_Reboucl_Recal, Relatif_Recal_Pile2_P2)
+            # Recherche Point n°3 (Axe Y)
+            P3_Recalage = RECHERCHE_POINT_RECAL(3, Pos_Reboucl_Recal, Relatif_Recal_Pile2_P3)
+            # Recalage repère de Travail
+            RECALAGE_REPERE(102, P1_Recalage, P2_Recalage, P3_Recalage)
+            # Positionnement au Centre du Bac Vide
+            RECALAGE_ROBOT(Pos_Centre_Bac2, Relatif_Approche, Lissage = True)
+    
+        else :
+            POSISIONNEMENT_DIR_ROBOT(Point_Config_x, Pos_DIR_Bac2, 102, Solution)
+    
+        # Appel FONCTION de Recherche Force et Aspiration pour Prise Bac Vide
+        gripper_prise_vide()
+    
+        # Retrait 1 Bac sur Pile n°2, Hauteur de mesure à incrémenter
+        if System_Mesure_Pile_V[2] < 1440 :                                         # Correction hauteur pile pour Bacs n°11 à n°2
+            System_Mesure_Pile_V[2] = System_Mesure_Pile_V[2] + Delta_bac_Vide
+        elif System_Mesure_Pile_V[2] < 1540 :                                       # Correction hauteur pile pour Bac n°1
+            System_Mesure_Pile_V[2] = 1540
+        else :                                                                      # Correction hauteur pile pour Dernier Bac
+            System_Mesure_Pile_V[2] = 10599
+    
+        # Dégagement avec évitement de la tôle de protection
+        if System_Mesure_Pile_V[2] > 1240 :     # Bacs n°5 à n°1
+            movel([0,0,320,0,0,0], vel = 150, ref = DR_BASE, mod = DR_MV_MOD_REL)              # Dégagement relatif en Z
+            movel([-150,150,0,0,0,0], vel = 150, ref = DR_BASE, mod = DR_MV_MOD_REL)           # Dégagement relatif en X/Y
+    
+    # ========================== PILE N° 3 ==============================
+    elif Num_pile_Haute == 3 :
+        # Forçage solution robot (Config' robot) suivant Hauteur Pile
+        if System_Mesure_Pile_V[3] < 1090 :     # Bacs n°11 à n°6 :     Config' Robot = 2 (Épaule à gauche/Coude Dessus/Poignet No Flip)
+            Solution = 2
+        else :                                  # Bacs n°5 à n°1 :      Config' Robot = 3 (Épaule à gauche/Coude Dessus/Poignet Flip)
+            Solution = 3
+    
+        if System_PLC_IN_TE_Recal_Pile_V[3] == OFF :
+            # Mise en position Rebouclage recalage (au centre théorique, à la distance de recalage)
+            Pos_Reboucl_Recal = POSITIONNEMENT_RECAL(Pos_Recal_Pile3, System_Mesure_Pile_V[3], Point_Config_x, Solution)
+            # Recherche Point n°1 (Origine repère, sur Axe X)
+            P1_Recalage = RECHERCHE_POINT_RECAL(1, Pos_Reboucl_Recal, Relatif_Recal_Pile3_P1)
+            # Recherche Point n°2 (Axe X)
+            P2_Recalage = RECHERCHE_POINT_RECAL(2, Pos_Reboucl_Recal, Relatif_Recal_Pile3_P2)
+            # Recherche Point n°3 (Axe Y)
+            P3_Recalage = RECHERCHE_POINT_RECAL(3, Pos_Reboucl_Recal, Relatif_Recal_Pile3_P3)
+            # Recalage repère de Travail
+            RECALAGE_REPERE(103, P1_Recalage, P2_Recalage, P3_Recalage)
+            # Positionnement au Centre du Bac Vide
+            RECALAGE_ROBOT(Pos_Centre_Bac3, Relatif_Approche, Lissage = True)
+    
+        else :
+            POSISIONNEMENT_DIR_ROBOT(Point_Config_x, Pos_DIR_Bac3, 103, Solution)
+    
+        # Appel FONCTION de Recherche Force et Aspiration pour Prise Bac Vide
+        gripper_prise_vide()
+    
+        # Retrait 1 Bac sur Pile n°3, Hauteur de mesure à incrémenter
+        if System_Mesure_Pile_V[3] < 1440 :                                         # Correction hauteur pile pour Bacs n°11 à n°2
+            System_Mesure_Pile_V[3] = System_Mesure_Pile_V[3] + Delta_bac_Vide
+        elif System_Mesure_Pile_V[3] < 1540 :                                       # Correction hauteur pile pour Bac n°1
+            System_Mesure_Pile_V[3] = 1540
+        else :                                                                      # Correction hauteur pile pour Dernier Bac
+            System_Mesure_Pile_V[3] = 10599
+    
+        # Dégagement avec évitement de position singuliaire
+        if System_Mesure_Pile_V[3] > 1080 :     # Bacs n°7 à n°1
+            movel([0,0,290,0,0,0], vel=150, ref = DR_BASE, mod = DR_MV_MOD_REL)              # Dégagement relatif en Z
+            movejx(Point_Config_x, ref = DR_BASE, mod = DR_MV_MOD_ABS, sol = 3, velx = System_Vitesse_Max)
+    
+    
+    
+    # ========================== PILE N° 4 ==============================
+    elif Num_pile_Haute == 4 :
+        # Solution = 2 pour toute la hauteur de la pile (solution 3 NOK)
+        if System_PLC_IN_TE_Recal_Pile_V[4] == OFF :
+            # Mise en position Rebouclage recalage (au centre théorique, à la distance de recalage)
+            Pos_Reboucl_Recal = POSITIONNEMENT_RECAL(Pos_Recal_Pile4, System_Mesure_Pile_V[4], Point_Config_x, Solution = 2)
+            # Recherche Point n°1 (Origine repère, sur Axe X)
+            P1_Recalage = RECHERCHE_POINT_RECAL(1, Pos_Reboucl_Recal, Relatif_Recal_Pile4_P1)
+            # Recherche Point n°2 (Axe X)
+            P2_Recalage = RECHERCHE_POINT_RECAL(2, Pos_Reboucl_Recal, Relatif_Recal_Pile4_P2)
+            # Recherche Point n°3 (Axe Y)
+            P3_Recalage = RECHERCHE_POINT_RECAL(3, Pos_Reboucl_Recal, Relatif_Recal_Pile4_P3)
+            # Recalage repère de Travail
+            RECALAGE_REPERE(104, P1_Recalage, P2_Recalage, P3_Recalage)
+            # Positionnement au Centre du Bac Vide
+            if System_Mesure_Pile_V[4] < 1170 :
+                RECALAGE_ROBOT(Pos_Centre_Bac4, Relatif_Approche, Lissage = True)       # Positionnement AVEC Lissage
+            else :
+                RECALAGE_ROBOT(Pos_Centre_Bac4, Relatif_Approche, Lissage = False)      # Positionnement SANS Lissage
+    
+        else :
+            POSISIONNEMENT_DIR_ROBOT(Point_Config_x, Pos_DIR_Bac4, 104, Solution)
+    
+        # Appel FONCTION de Recherche Force et Aspiration pour Prise Bac Vide
+        gripper_prise_vide()
+    
+        # Retrait 1 Bac sur Pile n°4, Hauteur de mesure à incrémenter
+        if System_Mesure_Pile_V[4] < 1440 :                                         # Correction hauteur pile pour Bacs n°11 à n°2
+            System_Mesure_Pile_V[4] = System_Mesure_Pile_V[4] + Delta_bac_Vide
+        elif System_Mesure_Pile_V[4] < 1540 :                                       # Correction hauteur pile pour Bac n°1
+            System_Mesure_Pile_V[4] = 1540
+        else :                                                                      # Correction hauteur pile pour Dernier Bac
+            System_Mesure_Pile_V[4] = 10599
+    
+        # Dégagement avec évitement de position singuliaire
+        if System_Mesure_Pile_V[4] > 1080 :     # Bacs n°7 à n°1
+            movel([0,0,320,0,0,0], vel=150, ref = DR_BASE, mod = DR_MV_MOD_REL)              # Dégagement relatif en Z
+            movel([150,150,0,0,0,0], vel=150, ref = DR_BASE, mod = DR_MV_MOD_REL)            # Dégagement relatif en X/Y
+            movejx(Point_Config_x, ref = DR_BASE, mod = DR_MV_MOD_ABS, sol = 3, velx = System_Vitesse_Max)
+    
+    
+    
+    else :
+        tp_popup("Numéro de pile à décharger Incorrecte", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+        exit()
+    
+    #---------------------------------------- Fin Séquence --------------------------------------
+    # Retour en Home
+    
+    # CallNode
+    global _alias_sub_name_init_mouvements
+    _alias_sub_name_init_mouvements()
+    
+_alias_sub_name_prise_bac_vide = prise_bac_vide
+
+def prise_bac_plein():
+    global System_Pos_Homej
+    global System_Pos_Homex
+    global System_01E02
+    global System_Hauteur_Z
+    global System_Mesure_Pile_V
+    global System_Mesure_Pile_P
+    global System_TE_Prise
+    global System_Step_Test
+    global System_HZ
+    global System_EV
+    global System_OR
+    global System_PLC_OUT_Echo_code_Cycle
+    global System_PLC_OUT_Echo_code_Pos
+    global System_PLC_OUT_Att_Cycle_code
+    global System_PLC_OUT_Error_code
+    global System_PLC_OUT_Step_Number
+    global System_PLC_OUT_Life_Int
+    global System_PLC_OUT_Cycle_End
+    global System_PLC_IN_Cycle_code
+    global System_PLC_IN_Position_code
+    global System_PLC_IN_Life_Int
+    global System_PLC_IN_Start_Cycle
+    global System_I_Vacc_General
+    global System_I_Vacc_Circuit1
+    global System_I_Vacc_Circuit2
+    global System_I_Vacc_Circuit3
+    global System_I_Err_Laser
+    global System_PLC_IN_Ack
+    global System_PLC_IN_TE_Recal_Pile_V
+    global System_Vitesse_Max
+    global System_Ctrl_Circuits_Num
+    global System_Ctrl_Circuits_OK
+    global System_PLC_IN_RAZ_TE_Ctrl
+    global System_Hauteur_Pile_Select
+    # CustomCodeNode
+    # Prise_Bac_Plein.drl
+    #================================== Cycle de Prise Bac Plein =================================
+    # CHANGE LOG :
+    #   V1.0 - Author : JCL - 30/06/2025    // Création
+    #   V2.0 - Author : JCL - 23/07/2025    // Passage en fonctionnement Dart Studio
+    #============================================================================================
+    
+    
+    #============================================================================================
+    
+    #---------------------------------------- Déclarations --------------------------------------
+    # Récupération variables Système
+    global System_HZ                            # Échange avec Automate : Liste des Hors Zone   (Sorties)
+    
+    global System_Hauteur_Z                     # Hauteur Z générale pour Scan + Positions au-dessus des piles
+    global System_Vitesse_Max           # Vitesse max en mm/s (pour paramètre "velx" mouvements "movej")
+    global System_01E02                         # Valeur Laser (en mm)
+    global System_Mesure_Pile_P                 # Liste des mesures Hauteur Piles bacs Pleins
+    
+    global System_PLC_OUT_Error_code            # Échange avec Automate : Sortie Error code
+    global System_PLC_OUT_Step_Number           # Échange avec Automate : Sortie Step Number
+    
+    # Point de Prise Bac Plein (sur convoyeur)
+    Pos_Prise_bac_Plein = posx(470, -865, -130, 118, 180, -151)
+    
+    # Position au-dessus du bac
+    Pos_Haute           = trans(Pos_Prise_bac_Plein, [0,0,System_Hauteur_Z,0,0,0], DR_BASE, DR_BASE)
+    
+    # Distance de Contrôle bac Fermé
+    Dist_Controle       = 250                               # Distance de contrôle "Bac Fermé"
+    Pos_Controle_Prise  = trans(Pos_Prise_bac_Plein, [0,0,Dist_Controle,0,0,0], DR_BASE, DR_BASE)
+    
+    # Distance d'Approche pour Prise Bac Plein
+    Dist_Approche       = Dist_Controle - 10                # Distance d'approche du bac Plein
+    
+    # Paramètres détection Bac non fermé
+    Delta_Z_Laser       = 70                                # Différence de hauteur Préhenseur/Laser
+    Distance_Bac_Ferme  = Dist_Controle + Delta_Z_Laser     # Distance mesurée au point d'approche Prise
+    Tolerance_Dist      = 20                                # Tolérance pour Contrôle Bac Fermé (en mm)
+    
+    #---------------------------------------- Paramétrage --------------------------------------
+    set_ref_coord(DR_BASE)              # Repère de référence
+    set_singularity_handling(DR_VAR_VEL)# Type d'évitement Singularités (variation de vitesse)
+    watch_collision_on(100)             # Niveau de sensibilité aux collisions (en %)
+    set_velj(60.0)                      # Vitesse Joint (en °/s)
+    set_accj(60.0)                      # Accélération Joint (en °/s²)
+    set_velx(250.0, 80.625)             # Vitesse Cartésienne (en mm/s | °/s)
+    set_accx(1000.0, 322.5)             # Accélération Cartésienne (en mm/s² | °/s²)
+    
+    set_tcp("Prehenseur")               # Sélection de l'Effecteur (Tool)
+    
+    #========================== Fonction Recherche pile la plus Basse ===========================
+    def RECHERCHE_MAXI(liste_mesures) :
+        # Récupération variables Système
+        global System_PLC_OUT_Error_code        # Échange avec Automate : Sortie Error code
+        global System_PLC_OUT_Step_Number       # Échange avec Automate : Sortie Step Number
+    
+        System_PLC_OUT_Step_Number = 1          # Step Number
+    
+        # Paramétrage boucle de recherche
+        Index_debut     = 1                     # Index début de recherche
+        Nbr_elements    = 6                     # Nombre d'élèments dans la liste
+    
+        # Initialisation 1er élèment de la liste comme Maximum
+        Index_Maxi      = Index_debut                   # Index Tableau valeur maxi
+        Val_Maxi        = liste_mesures[Index_Maxi]     # Valeur de mesure associée
+    
+        # Données physiques mesurée
+        Delta_Bac           = 260 - 50          # Différence de hauteur entre 2 bacs pleins
+        Mesure_Pile_Pleine  = 500               # Mesure si Pile Pleine (4 bacs)
+    
+        # Boucle de recherche
+        for i in range(Index_debut, Nbr_elements) :
+            if liste_mesures[i] > (Val_Maxi + Delta_Bac) and liste_mesures[i] != 0 and liste_mesures[i] != 9999 :
+                Index_Maxi = i
+                Val_Maxi = liste_mesures[i]
+    
+        # Détection Pile Pleine
+        if Val_Maxi <= Mesure_Pile_Pleine :
+            System_PLC_OUT_Error_code = 10      # Error Number
+            tp_popup("Palette bacs Pleins Terminée (Palette Pleine) ", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+            exit()
+    
+        return Index_Maxi                       # Retour Index tableau Pile la plus Basse
+    
+    #============================================================================================
+    
+    #------------------------------------------ SÉQUENCE ----------------------------------------
+    System_PLC_OUT_Step_Number = 0              # Step Number
+    
+    # Vérification état Préhenseur
+    while System_TE_Prise == ON :
+        System_PLC_OUT_Error_code = 15          # Error Number
+        tp_popup("Prise impossible, Préhenseur non vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+        exit()
+    
+    # Recherche Pile la plus Basse (valeur laser la plus haute)
+    Num_pile_Basse = RECHERCHE_MAXI(System_Mesure_Pile_P)
+    tp_log("Numero de pile la plus Basse : " +str(Num_pile_Basse) + "\n Hauteur pile mesuree = " +str(System_Mesure_Pile_P[Num_pile_Basse]))
+    
+    System_HZ[3] = OFF                          # Hors Zone Convoyeur oblique
+    System_PLC_OUT_Step_Number = 2              # Step Number
+    
+    # Mise en Position au-dessus du bac (Lissé)
+    movel(Pos_Haute, r = 100, ref = DR_BASE, mod = DR_MV_MOD_ABS)
+    
+    # Mise en Position de Contrôle bac fermé
+    movel(Pos_Controle_Prise, ra= DR_MV_RA_DUPLICATE, ref = DR_BASE, mod = DR_MV_MOD_ABS)
+    
+    # Vérification Bac Fermé
+    while System_01E02 < (Distance_Bac_Ferme - Tolerance_Dist) or System_01E02 > (Distance_Bac_Ferme + Tolerance_Dist) :
+        System_PLC_OUT_Error_code = 11          # Error Number
+        #tp_popup("Bac plein Non Fermé pour prise", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+        while System_PLC_IN_Ack == False :
+            wait(0.1)
+    System_PLC_OUT_Error_code = 0               # Error Number
+    
+    # Approche Bac Plein
+    movel([0,0,-Dist_Approche,0,0,0], ref = DR_BASE, mod = DR_MV_MOD_REL)
+    
+    # Appel FONCTION de Recherche Force et Aspiration pour Prise Bac Plein
+    
+    # CallNode
+    global _alias_sub_name_gripper_prise_plein
+    _alias_sub_name_gripper_prise_plein()
+    # CustomCodeNode
+    
+    System_PLC_OUT_Step_Number = 3              # Step Number
+    
+    #---------------------------------------- Fin Séquence --------------------------------------
+    # Retour en Home
+    
+    # CallNode
+    global _alias_sub_name_init_mouvements
+    _alias_sub_name_init_mouvements()
+    
+_alias_sub_name_prise_bac_plein = prise_bac_plein
+
+def depose_bac_vide():
+    global System_Pos_Homej
+    global System_Pos_Homex
+    global System_01E02
+    global System_Hauteur_Z
+    global System_Mesure_Pile_V
+    global System_Mesure_Pile_P
+    global System_TE_Prise
+    global System_Step_Test
+    global System_HZ
+    global System_EV
+    global System_OR
+    global System_PLC_OUT_Echo_code_Cycle
+    global System_PLC_OUT_Echo_code_Pos
+    global System_PLC_OUT_Att_Cycle_code
+    global System_PLC_OUT_Error_code
+    global System_PLC_OUT_Step_Number
+    global System_PLC_OUT_Life_Int
+    global System_PLC_OUT_Cycle_End
+    global System_PLC_IN_Cycle_code
+    global System_PLC_IN_Position_code
+    global System_PLC_IN_Life_Int
+    global System_PLC_IN_Start_Cycle
+    global System_I_Vacc_General
+    global System_I_Vacc_Circuit1
+    global System_I_Vacc_Circuit2
+    global System_I_Vacc_Circuit3
+    global System_I_Err_Laser
+    global System_PLC_IN_Ack
+    global System_PLC_IN_TE_Recal_Pile_V
+    global System_Vitesse_Max
+    global System_Ctrl_Circuits_Num
+    global System_Ctrl_Circuits_OK
+    global System_PLC_IN_RAZ_TE_Ctrl
+    global System_Hauteur_Pile_Select
+    # CustomCodeNode
+    # Dépose_Bac_Vide.drl
+    #================================== Cycle de Dépose Bac Vide ================================
+    # CHANGE LOG :
+    #   V1.0 - Author : JCL - 30/06/2025    // Création
+    #   V2.0 - Author : JCL - 23/07/2025    // Passage en fonctionnement Dart Studio
+    #============================================================================================
+    
+    
+    #============================================================================================
+    
+    #---------------------------------------- Déclarations --------------------------------------
+    # Récupération variables Système
+    global System_HZ                            # Échange avec Automate : Liste des Hors Zone   (Sorties)
+    global System_Vitesse_Max                   # Vitesse max en mm/s (pour paramètre "velx" mouvements "movej")
+    
+    global System_PLC_OUT_Error_code            # Échange avec Automate : Sortie Error code
+    global System_PLC_OUT_Step_Number           # Échange avec Automate : Sortie Step Number
+    
+    # Point de Dépose Bac Vide (sur convoyeur)
+    Pos_Depose_bac_Vide = posx(490, -855, -380, 60, 180, 150)
+    
+    # Point d'Approche pour Dépose Bac Vide
+    Dist_Approche       = 400
+    Pos_Approche_Depose = trans(Pos_Depose_bac_Vide, [0,0,Dist_Approche,0,0,0], DR_BASE, DR_BASE)
+    Relatif_Approche    = posx(0,0,-(Dist_Approche - 50),0,0,0)   # Point relatif d'approche avant Dépose bac Vide
+    
+    #---------------------------------------- Paramétrage --------------------------------------
+    set_ref_coord(DR_BASE)              # Repère de référence
+    set_singularity_handling(DR_VAR_VEL)# Type d'évitement Singularités (variation de vitesse)
+    watch_collision_on(100)             # Niveau de sensibilité aux collisions (en %)
+    set_velj(60.0)                      # Vitesse Joint (en °/s)
+    set_accj(60.0)                      # Accélération Joint (en °/s²)
+    set_velx(250.0, 80.625)             # Vitesse Cartésienne (en mm/s | °/s)
+    set_accx(1000.0, 322.5)             # Accélération Cartésienne (en mm/s² | °/s²)
+    
+    set_tcp("Prehenseur")               # Sélection de l'Effecteur (Tool)
+    
+    #------------------------------------------ SÉQUENCE ----------------------------------------
+    System_PLC_OUT_Step_Number = 0              # Step Number
+    
+    # Vérification état Préhenseur
+    while System_TE_Prise == OFF :
+        System_PLC_OUT_Error_code = 16          # Error Number
+        tp_popup("Dépose impossible, Préhenseur vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+        exit()
+    
+    System_HZ[3] = OFF                          # Hors Zone Convoyeur oblique
+    System_PLC_OUT_Step_Number = 1              # Step Number
+    
+    # Approche pour Dépose (lissé)
+    movel(Pos_Approche_Depose, r = 100, ref = DR_BASE, mod = DR_MV_MOD_ABS)
+    movel(Relatif_Approche, vel = 100, ra= DR_MV_RA_DUPLICATE, ref = DR_BASE, mod = DR_MV_MOD_REL)
+    
+    # Appel FONCTION de Recherche Force et Relâchement Bac Vide
+    
+    # CallNode
+    global _alias_sub_name_gripper_depose
+    _alias_sub_name_gripper_depose()
+    # CustomCodeNode
+    
+    System_PLC_OUT_Step_Number = 2              # Step Number
+    
+    #---------------------------------------- Fin Séquence --------------------------------------
+    # Retour en Home
+    
+    # CallNode
+    global _alias_sub_name_init_mouvements
+    _alias_sub_name_init_mouvements()
+    
+_alias_sub_name_depose_bac_vide = depose_bac_vide
+
+def depose_bac_plein():
+    global System_Pos_Homej
+    global System_Pos_Homex
+    global System_01E02
+    global System_Hauteur_Z
+    global System_Mesure_Pile_V
+    global System_Mesure_Pile_P
+    global System_TE_Prise
+    global System_Step_Test
+    global System_HZ
+    global System_EV
+    global System_OR
+    global System_PLC_OUT_Echo_code_Cycle
+    global System_PLC_OUT_Echo_code_Pos
+    global System_PLC_OUT_Att_Cycle_code
+    global System_PLC_OUT_Error_code
+    global System_PLC_OUT_Step_Number
+    global System_PLC_OUT_Life_Int
+    global System_PLC_OUT_Cycle_End
+    global System_PLC_IN_Cycle_code
+    global System_PLC_IN_Position_code
+    global System_PLC_IN_Life_Int
+    global System_PLC_IN_Start_Cycle
+    global System_I_Vacc_General
+    global System_I_Vacc_Circuit1
+    global System_I_Vacc_Circuit2
+    global System_I_Vacc_Circuit3
+    global System_I_Err_Laser
+    global System_PLC_IN_Ack
+    global System_PLC_IN_TE_Recal_Pile_V
+    global System_Vitesse_Max
+    global System_Ctrl_Circuits_Num
+    global System_Ctrl_Circuits_OK
+    global System_PLC_IN_RAZ_TE_Ctrl
+    global System_Hauteur_Pile_Select
+    # CustomCodeNode
+    # Dépose_Bac_Plein.drl
+    #================================= Cycle de Dépose Bac Plein ================================
+    # CHANGE LOG :
+    #   V1.0 - Author : JCL - 04/07/2025    // Création
+    #   V2.0 - Author : JCL - 23/07/2025    // Passage en fonctionnement Dart Studio
+    #   V2.1 - Author : JCL - 23/10/2025    // Ajout variable Hauteur Pile Sélectionnée (pour choix d'évitement singularités)
+    #============================================================================================
+    
+    #from DRCF import *  # Pour appel Sous-programme
+    
+    #============================================================================================
+    
+    #---------------------------------------- Déclarations --------------------------------------
+    # Récupération variables Système
+    global System_HZ                            # Échange avec Automate : Liste des Hors Zone   (Sorties)
+    global System_Vitesse_Max                   # Vitesse max en mm/s (pour paramètre "velx" mouvements "movej")
+    
+    global System_Mesure_Pile_P                 # Liste des mesures Hauteur Piles bacs Pleins
+    
+    global System_PLC_OUT_Error_code            # Échange avec Automate : Sortie Error code
+    global System_PLC_OUT_Step_Number           # Échange avec Automate : Sortie Step Number
+    
+    # Positions X/Y et Rotations de Dépose Bac Plein (sur palette)
+    Pos_XY_bac_Plein_P1  = posx(-505, -325, System_Hauteur_Z, 150, 180, 150)
+    Pos_XY_bac_Plein_P2  = posx(Pos_XY_bac_Plein_P1[0]      , Pos_XY_bac_Plein_P1[1] + 620, System_Hauteur_Z, 150, 180, -30)
+    Pos_XY_bac_Plein_P3  = posx(Pos_XY_bac_Plein_P1[0] - 510, Pos_XY_bac_Plein_P1[1] - 100, System_Hauteur_Z, 150, 180, 240)
+    Pos_XY_bac_Plein_P4  = posx(Pos_XY_bac_Plein_P1[0] - 510, Pos_XY_bac_Plein_P1[1] + 305, System_Hauteur_Z, 150, 180, 240)
+    Pos_XY_bac_Plein_P5  = posx(Pos_XY_bac_Plein_P1[0] - 510, Pos_XY_bac_Plein_P1[1] + 715, System_Hauteur_Z, 150, 180, 240)
+    
+    # Paramètres généraux
+    Delta_bac_Plein         = 260                   # Différence de hauteur entre 2 bacs (en mm)
+    
+    # Distances de Dépose
+    Delta_Z_Laser           = 70                    # Différence de hauteur Préhenseur/Laser (en mm)
+    Dist_Lent               = 50                    # Distance d'approche à petite vitesse
+    Dist_Depose             = 5                    # Distance avant recherche force de dépose
+    
+    # Distance Z prochain Bac Plein Pile n°1
+    Dist_Z_bac_Plein_P1 = System_Mesure_Pile_P[1] - Delta_Z_Laser - Delta_bac_Plein - 20
+    
+    # Distance Z prochain Bac Plein Pile n°2
+    Dist_Z_bac_Plein_P2 = System_Mesure_Pile_P[2] - Delta_Z_Laser - Delta_bac_Plein - 10
+    
+    # Distance Z prochain Bac Plein Pile n°3
+    Dist_Z_bac_Plein_P3 = System_Mesure_Pile_P[3] - Delta_Z_Laser - Delta_bac_Plein - 10
+    
+    # Distance Z prochain Bac Plein Pile n°4
+    Dist_Z_bac_Plein_P4 = System_Mesure_Pile_P[4] - Delta_Z_Laser - Delta_bac_Plein - 10
+    
+    # Distance Z prochain Bac Plein Pile n°5
+    Dist_Z_bac_Plein_P5 = System_Mesure_Pile_P[5] - Delta_Z_Laser - Delta_bac_Plein - 10
+    
+    #---------------------------------------- Paramétrage --------------------------------------
+    set_ref_coord(DR_BASE)              # Repère de référence
+    #set_singularity_handling(DR_VAR_VEL)# Type d'évitement Singularités (variation de vitesse)
+    set_singularity_handling(DR_AVOID)  # Type d'évitement Singularités (évitement automatique)
+    watch_collision_on(100)             # Niveau de sensibilité aux collisions (en %)
+    set_velj(60.0)                      # Vitesse Joint (en °/s)
+    set_accj(60.0)                      # Accélération Joint (en °/s²)
+    set_velx(250.0, 80.625)             # Vitesse Cartésienne (en mm/s | °/s)
+    set_accx(1000.0, 80)   #322.5       # Accélération Cartésienne (en mm/s² | °/s²)
+    
+    set_tcp("Prehenseur")               # Sélection de l'Effecteur (Tool)
+    
+    #========================== Fonction Recherche pile la plus Basse ===========================
+    def RECHERCHE_MAXI(liste_mesures) :
+        # Récupération variables Système
+        global System_PLC_OUT_Error_code        # Échange avec Automate : Sortie Error code
+    
+        # Paramétrage boucle de recherche
+        Index_debut     = 1                     # Index début de recherche
+        Nbr_elements    = 6                     # Nombre d'élèments dans la liste
+    
+        # Initialisation 1er élèment de la liste comme Maximum
+        Index_Maxi      = Index_debut                   # Index Tableau valeur maxi
+        Val_Maxi        = liste_mesures[Index_Maxi]     # Valeur de mesure associée
+    
+        # Données physiques mesurée
+        Delta_Bac           = 260 - 150          # Différence de hauteur entre 2 bacs pleins
+        Mesure_Pile_Pleine  = 500               # Mesure si Pile Pleine (4 bacs)
+    
+        # Boucle de recherche
+        for i in range(Index_debut, Nbr_elements) :
+            if liste_mesures[i] > (Val_Maxi + Delta_Bac) and liste_mesures[i] != 0 and liste_mesures[i] != 9999 :
+                Index_Maxi = i
+                Val_Maxi = liste_mesures[i]
+    
+        # Détection Pile Pleine
+        if Val_Maxi <= Mesure_Pile_Pleine :
+            System_PLC_OUT_Error_code = 10      # Error Number
+            tp_popup("Palette bacs Pleins Terminée (Palette Pleine) ", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+            exit()
+    
+        return Index_Maxi                       # Retour Index tableau Pile la plus Basse
+    
+    #============================================================================================
+    #================================== Fonction Approche Dépose ================================
+    def APPROCHE_DEPOSE(Pos_Depose_XY, Dist_Z_bac_Plein, Dist_Lent, Dist_Depose, Evitement) :
+        set_tcp("Prehenseur")                   # Sélection Effecteur (Tool)
+    
+        # Point relatif d'approche Grande Vitesse
+        Relatif_Rapide  = posx(0,0,-(Dist_Z_bac_Plein - Dist_Lent - Dist_Depose),0,0,0)      # Point relatif d'approche Rapide bac Plein
+        # Point relatif d'approche Petite Vitesse
+        Relatif_Lent    = posx(0,0,-Dist_Lent,0,0,0)                         # Point relatif d'approche Lente bac Plein
+    
+        if Evitement == True :
+            # Position intermédiaire pour évitement Robot
+            Pos_Evitement = posx(-800, -400, System_Hauteur_Z, 60, 180, 150)    # Evitement Corps du Robot
+            movel(Pos_Evitement, r = 100, ref = DR_BASE, mod = DR_MV_MOD_ABS)
+    
+        # Positionnement au-dessus de la pile
+        movel(Pos_Depose_XY, ra= DR_MV_RA_DUPLICATE, mod = DR_MV_MOD_ABS)
+        # Approche de la pile Rapide
+        movel(Relatif_Rapide, r = 10, vel = 150, mod = DR_MV_MOD_REL)
+        # Approche de la pile Lent
+        movel(Relatif_Lent, ra= DR_MV_RA_DUPLICATE, vel = 50, mod = DR_MV_MOD_REL)
+    
+    #============================================================================================
+    
+    #------------------------------------------ SÉQUENCE ----------------------------------------
+    System_PLC_OUT_Step_Number = 0                      # Step Number
+    
+    # Vérification état Préhenseur
+    while System_TE_Prise == OFF :
+        System_PLC_OUT_Error_code = 16                  # Error Number
+        tp_popup("Dépose impossible, Préhenseur vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+        exit()
+    
+    # Recherche Pile la plus Basse (valeur laser la plus haute)
+    Num_pile_Basse              = RECHERCHE_MAXI(System_Mesure_Pile_P)
+    System_Hauteur_Pile_Select  = System_Mesure_Pile_P[Num_pile_Basse]
+    tp_log("Numero de pile la plus Basse : " +str(Num_pile_Basse) + "\n Hauteur pile mesuree = " +str(System_Hauteur_Pile_Select))
+    
+    System_HZ[2] = OFF                                  # Hors Zone Palette bacs Pleins
+    
+    System_PLC_OUT_Step_Number = Num_pile_Basse         # Step Number (Num pile Dépose)
+    
+    
+    if Num_pile_Basse == 1 :
+        # Mise en position de Dépose Bac Plein sur Pile n°1
+        APPROCHE_DEPOSE(Pos_XY_bac_Plein_P1, Dist_Z_bac_Plein_P1, Dist_Lent, Dist_Depose, Evitement = False)
+        # Appel FONCTION de Recherche Force et Relâchement Bac Plein
+        gripper_depose()
+        # Ajout 1 Bac sur Pile n°1, Hauteur de mesure à décrémenter
+        System_Mesure_Pile_P[1] = System_Mesure_Pile_P[1] - Delta_bac_Plein
+    
+        # Dégagement avec évitement de position singuliaire
+        if System_Mesure_Pile_P[1] > 950 :                  # Bacs n°1 et n°2
+            set_singularity_handling(DR_AVOID)                                              # Type d'évitement Singularités (évitement automatique)
+            movel([-400,+200,200,0,0,0], vel = 150, ref = DR_BASE, mod = DR_MV_MOD_REL)     # Dégagement relatif
+    
+    elif Num_pile_Basse == 2 :
+        # Mise en position de Dépose Bac Plein sur Pile n°2
+        APPROCHE_DEPOSE(Pos_XY_bac_Plein_P2, Dist_Z_bac_Plein_P2, Dist_Lent, Dist_Depose, Evitement = True)
+        # Appel FONCTION de Recherche Force et Relâchement Bac Plein
+        gripper_depose()
+        # Ajout 1 Bac sur Pile n°2, Hauteur de mesure à décrémenter
+        System_Mesure_Pile_P[2] = System_Mesure_Pile_P[2] - Delta_bac_Plein
+    
+        # Dégagement avec évitement de position singuliaire
+        if System_Mesure_Pile_P[2] > 950 :                  # Bacs n°1 et n°2
+            set_singularity_handling(DR_AVOID)                                              # Type d'évitement Singularités (évitement automatique)
+            movel([-400,-200,200,0,0,0], vel = 150, ref = DR_BASE, mod = DR_MV_MOD_REL)     # Dégagement relatif
+    
+    elif Num_pile_Basse == 3 :
+        # Mise en position de Dépose Bac Plein sur Pile n°3
+        APPROCHE_DEPOSE(Pos_XY_bac_Plein_P3, Dist_Z_bac_Plein_P3, Dist_Lent, Dist_Depose, Evitement = False)
+        # Appel FONCTION de Recherche Force et Relâchement Bac Plein
+        gripper_depose()
+        # Ajout 1 Bac sur Pile n°3, Hauteur de mesure à décrémenter
+        System_Mesure_Pile_P[3] = System_Mesure_Pile_P[3] - Delta_bac_Plein
+    
+    
+    elif Num_pile_Basse == 4 :
+        # Mise en position de Dépose Bac Plein sur Pile n°4
+        APPROCHE_DEPOSE(Pos_XY_bac_Plein_P4, Dist_Z_bac_Plein_P4, Dist_Lent, Dist_Depose, Evitement = False)
+        # Appel FONCTION de Recherche Force et Relâchement Bac Plein
+        gripper_depose()
+        # Ajout 1 Bac sur Pile n°4, Hauteur de mesure à décrémenter
+        System_Mesure_Pile_P[4] = System_Mesure_Pile_P[4] - Delta_bac_Plein
+    
+    
+    elif Num_pile_Basse == 5 :
+        # Mise en position de Dépose Bac Plein sur Pile n°5
+        APPROCHE_DEPOSE(Pos_XY_bac_Plein_P5, Dist_Z_bac_Plein_P5, Dist_Lent, Dist_Depose, Evitement = True)
+        # Appel FONCTION de Recherche Force et Relâchement Bac Plein
+        gripper_depose()
+        # Ajout 1 Bac sur Pile n°5, Hauteur de mesure à décrémenter
+        System_Mesure_Pile_P[5] = System_Mesure_Pile_P[5] - Delta_bac_Plein
+    
+    
+    else :
+        tp_popup("Numéro de pile à charger Incorrecte", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+        exit()
+    
+    #---------------------------------------- Fin Séquence --------------------------------------
+    # Retour en Home
+    #sub_program_run("init_mouvements")
+    # CallNode
+    global _alias_sub_name_init_mouvements
+    _alias_sub_name_init_mouvements()
+    
+_alias_sub_name_depose_bac_plein = depose_bac_plein
+
+set_singular_handling(DR_AVOID)
+set_velj(60.0)
+set_accj(60.0)
+set_velx(250.0, 225.0, DR_OFF)
+set_accx(1000.0, 900.0)
+gLoopCountRev = 0
+while gLoopCountRev < 1:
+    # CustomCodeNode
+    # Main.drl
+    #====================================== Initialisation ==================================
+    # CHANGE LOG :
+    #   V1.0 - Author : JCL - 23/06/2025    // Création
+    #   V2.0 - Author : JCL - 23/07/2025    // Passage en fonctionnement Dart Studio
+    #========================================================================================
+    
+    tp_log("========= Start Robot =========")
+    
+    #---------------------------------------- Déclarations --------------------------------------
+    global System_Pos_Homej             # Position Home en Articulaire
+    global System_Pos_Homex             # Position Home en Cartésien
+    
+    global System_01E02                 # Valeur Laser (en mm)
+    
+    global System_EV                            # Échange avec Automate : Liste des Evènements  (Entrées)
+    global System_OR                            # Échange avec Automate : Liste des Ordres      (Sorties)
+    global System_HZ                            # Échange avec Automate : Liste des Hors Zone   (Sorties)
+    
+    global System_PLC_IN_Cycle_code             # Échange avec Automate : Entrée Code Cycle
+    global System_PLC_IN_Position_code          # Échange avec Automate : Entrée Code Position
+    global System_PLC_IN_Life_Int               # Échange avec Automate : Entrée Int de vie
+    global System_PLC_IN_Start_Cycle            # Échange avec Automate : Entrée Start Cycle
+    global System_PLC_IN_RAZ_TE_Ctrl            # Échange avec Automate : Demande de RAZ TE Contrôle Circuits de vide
+    
+    global System_PLC_OUT_Echo_code_Cycle       # Échange avec Automate : Sortie Echo code Cycle
+    global System_PLC_OUT_Echo_code_Pos         # Échange avec Automate : Sortie Echo code Position
+    global System_PLC_OUT_Error_code            # Échange avec Automate : Sortie Error code
+    global System_PLC_OUT_Step_Number           # Échange avec Automate : Sortie Step Number
+    global System_PLC_OUT_Att_Cycle_code        # Échange avec Automate : Sortie Attente code Cycle
+    global System_PLC_OUT_Life_Int              # Échange avec Automate : Sortie Int de vie
+    global System_PLC_OUT_Cycle_End             # Échange avec Automate : Sortie Cycle End
+    global System_Ctrl_Circuits_OK              # Échange avec Automate : TE Contrôle circuits de vide Effectué
+    
+    global System_I_Vacc_General        # Entrée digitale Vaccuostat Général
+    global System_I_Vacc_Circuit1       # Entrée digitale Vaccuostat Circuit vide n°1
+    global System_I_Vacc_Circuit2       # Entrée digitale Vaccuostat Circuit vide n°2
+    global System_I_Vacc_Circuit3       # Entrée digitale Vaccuostat Circuit vide n°3
+    global System_TE_Prise              # Regroupement retours Vaccuostats circuits de vide
+    
+    global System_Hauteur_Z             # Hauteur Z générale pour Scan + Positions au-dessus des piles
+    global System_Vitesse_Max           # Vitesse max en mm/s (pour paramètre "velx" mouvements "movej")
+    
+    
+    global System_Mesure_Pile_V         # Liste des mesures Hauteur Piles bacs Vides
+    global System_Mesure_Pile_P         # Liste des mesures Hauteur Piles bacs Pleins
+    
+    global System_Step_Test             # Variable pour déroulement programme pour TEST
+    
+    # Initialisation des Listes
+    System_EV           = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    System_OR           = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    System_HZ           = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    
+    # Initialisation des Variables
+    System_TE_Prise     = False         # TE Prise Robot (Seuil de vide sur au moins 1 circuit)
+    System_Hauteur_Z    = 450           # Hauteur Z générale (Scrutation, mise en position, ...)
+    System_Vitesse_Max  = 250           # Vitesse max en mm/s (pour paramètre "velx" mouvements "movej")
+    
+    System_Step_Test    = 0             # Variable de test SANS Automate (enchaînement des trajectoires)
+    
+    
+    #---------------------------------------- Paramétrage --------------------------------------
+    set_ref_coord(DR_BASE)              # Repère de référence
+    set_tcp("Prehenseur")               # Sélection Effecteur (Tool)
+    #set_tool("Poids_VIDE")             # Sélection Poids de l'outil (PayLoad)
+    #set_tool_shape("Forme_Prehenseur") # Sélection Forme de l'outil
+    
+    set_mode_analog_input(1, DR_ANALOG_CURRENT)     # Paramétrage entrée analogique n°1 en 4..20mA
+    
+    #set_singularity_handling(DR_VAR_VEL)            # Type d'évitement Singularités (variation de vitesse)
+    set_singularity_handling(DR_AVOID)  # Type d'évitement Singularités (évitement automatique)
+    watch_collision_on(100)                         # Niveau de sensibilité aux collisions (en %)
+    
+    set_velj(60.0)                      # Vitesse Joint (en °/s)
+    set_accj(60.0)                      # Accélération Joint (en °/s²)
+    set_velx(250.0, 80.625)             # Vitesse Cartésienne (en mm/s | °/s)
+    set_accx(1000.0, 322.5)             # Accélération Cartésienne (en mm/s² | °/s²)
+    
+    release_force()                     # Désactivation Mode Force
+    release_compliance_ctrl()           # Désactivation Mode Compliance
+    
+    #----------------------------------- Initialisation Échanges PLC ----------------------------
+    # RAZ Ordres + Hors Zones
+    
+    for i in range(0, 32) :
+        System_OR[i] = OFF
+        System_HZ[i] = OFF
+    
+    # RAZ Échanges API
+    System_PLC_OUT_Echo_code_Cycle     = 0         # Echo Code Cycle
+    System_PLC_OUT_Echo_code_Pos       = 0         # Echo Code Position
+    System_PLC_OUT_Error_code          = 0         # Error Number
+    System_PLC_OUT_Step_Number         = 0         # Step Number
+    System_PLC_OUT_Att_Cycle_code      = 0         # Attente Code Cycle
+    System_PLC_OUT_Life_Int            = 0         # Life Int
+    System_PLC_OUT_Cycle_End           = 0         # Cycle End
+    
+    
+    #-------------------------------- Démarrage des THREAD (Tâches de fond) ---------------------
+    #============================================================================================
+    #============================================================================================
+    def MISE_A_ECHELLE_LASER() :
+        #---------------------------------------- Déclarations --------------------------------------
+        # Récupération variables Système
+        global System_01E02                         # Valeur Laser (en mm)
+    
+        #---------------------------------------- Paramétrage --------------------------------------
+        Capt_01E02_Val_Brute    = get_analog_input(1)           # Récupération Valeur Laser (en mA)
+        Capt_01E02_Defaut       = get_digital_input(5)          # Récupération Entrée Défaut
+        Capt_01E02_Val_min      = 4.0               # 4 mA
+        Capt_01E02_Val_max      = 20.0              # 20 mA
+        Capt_01E02_Mesure_min   = 200.0             # 200 mm                (Paramètre AnL IL1000)
+        Capt_01E02_Mesure_max   = 999.99            # 999.99 mm             (Paramètre AnH IL1000)
+        Capt_01E02_Offset_USER  = 0                 # Offset de correction
+    
+        #------------------------------------- Mise à l'échelle ------------------------------------
+        # Valeur corrigée = Offset USER + Sortie_min + (valeur - entree_min) * (sortie_max - sortie_min) / (entree_max - entree_min)
+        System_01E02 = Capt_01E02_Offset_USER + Capt_01E02_Mesure_min + (Capt_01E02_Val_Brute - Capt_01E02_Val_min) * (Capt_01E02_Mesure_max - Capt_01E02_Mesure_min) / (Capt_01E02_Val_max - Capt_01E02_Val_min)
+    
+        # Bornage valeur corrigée (hors plage ou en défaut)
+        if System_01E02 == Capt_01E02_Mesure_min or Capt_01E02_Defaut == ON :
+            System_01E02 = 9999
+    
+        '''
+        # Pop-up de vérification Mesure / Mise à l'échelle
+        tp_popup("Valeur Laser Brute    = " +str(Capt_01E02_Val_Brute), DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+        tp_popup("Valeur Laser Corrigee = " +str(System_01E02), DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
+        '''
+    
+    thread_run(MISE_A_ECHELLE_LASER, loop=True)             # Démarrage Thread Mise à l'échelle LASER
+    #============================================================================================
+    #============================================================================================
+    def EXCHANGE_PLC() :
+        #---------------------------------------- Déclarations --------------------------------------
+        # Récupération variables Système
+        global System_EV                           # Échange avec Automate : Liste des Evènements  (Entrées)
+        global System_OR                           # Échange avec Automate : Liste des Ordres      (Sorties)
+        global System_HZ                           # Échange avec Automate : Liste des Hors Zone   (Sorties)
+        global System_PLC_IN_TE_Recal_Pile_V       # Échange avec Automate : TE Recalage Piles bacs vides (Entrées)
+        global System_01E02                        # Valeur Laser (en mm)
+    
+        global System_PLC_IN_Cycle_code            # Échange avec Automate : Entrée Code Cycle
+        global System_PLC_IN_Position_code         # Échange avec Automate : Entrée Code Position
+        global System_PLC_IN_Ack                   # Échange avec Automate : Acquittement Erreur Robot
+        global System_PLC_IN_Life_Int              # Échange avec Automate : Entrée Int de vie
+        global System_PLC_IN_Start_Cycle           # Échange avec Automate : Entrée Start Cycle
+        global System_PLC_IN_RAZ_TE_Ctrl            # Échange avec Automate : Demande de RAZ TE Contrôle Circuits de vide
+    
+        global System_PLC_OUT_Echo_code_Cycle      # Échange avec Automate : Sortie Echo code Cycle
+        global System_PLC_OUT_Echo_code_Pos        # Échange avec Automate : Sortie Echo code Position
+        global System_PLC_OUT_Error_code           # Échange avec Automate : Sortie Error code
+        global System_PLC_OUT_Step_Number          # Échange avec Automate : Sortie Step Number
+        global System_PLC_OUT_Att_Cycle_code       # Échange avec Automate : Sortie Attente code Cycle
+        global System_PLC_OUT_Life_Int             # Échange avec Automate : Sortie Int de vie
+        global System_PLC_OUT_Cycle_End            # Échange avec Automate : Sortie Cycle End
+        global System_Ctrl_Circuits_OK              # Échange avec Automate : TE Contrôle circuits de vide Effectué
+    
+    
+        #============================================================================================
+    
+        #--------------------------------------- Gestion Int de vie ------------------------------------
+        System_PLC_OUT_Life_Int = System_PLC_OUT_Life_Int + 1
+    
+        #---------------------------------------- Lecture Entrées --------------------------------------
+        # Evènements (aiguillage trajectoires)
+        System_EV[0] = get_input_register_bit(0)       # NOT USED
+        System_EV[1] = get_input_register_bit(1)       # EV1 = Demande Scan piles bacs Vides
+        System_EV[2] = get_input_register_bit(2)       # EV2 = Demande Prise bac Vide
+        System_EV[3] = get_input_register_bit(3)       # EV3 = Demande Dépose bac Vide
+        System_EV[4] = get_input_register_bit(4)
+        System_EV[5] = get_input_register_bit(5)
+        System_EV[6] = get_input_register_bit(6)       # EV6 = Demande Scan piles bacs Pleins
+        System_EV[7] = get_input_register_bit(7)       # EV7 = Demande Prise bac Plein
+        System_EV[8] = get_input_register_bit(8)       # EV8 = Demande Dépose bac Plein
+        System_EV[9] = get_input_register_bit(9)
+        System_EV[10] = get_input_register_bit(10)
+    
+        # Gestion Cycles
+        System_PLC_IN_Cycle_code       = get_input_register_int(0)         # Échange avec Automate : Entrée Code Cycle
+        System_PLC_IN_Position_code    = get_input_register_int(1)         # Échange avec Automate : Entrée Code Position
+    
+        System_PLC_IN_Ack              = get_input_register_int(5)         # Échange avec Automate : Acquittement Erreur Robot
+        System_PLC_IN_Life_Int         = get_input_register_int(6)         # Échange avec Automate : Entrée Int de vie
+        System_PLC_IN_Start_Cycle      = get_input_register_int(7)         # Échange avec Automate : Entrée Start Cycle
+    
+        # USER Data IN
+        System_PLC_IN_TE_Recal_Pile_V[0]   = OFF
+        System_PLC_IN_TE_Recal_Pile_V[1]   = get_input_register_bit(33)    # TE Recalage Pile bacs vides n°1
+        System_PLC_IN_TE_Recal_Pile_V[2]   = get_input_register_bit(34)    # TE Recalage Pile bacs vides n°2
+        System_PLC_IN_TE_Recal_Pile_V[3]   = get_input_register_bit(35)    # TE Recalage Pile bacs vides n°3
+        System_PLC_IN_TE_Recal_Pile_V[4]   = get_input_register_bit(36)    # TE Recalage Pile bacs vides n°4
+        System_PLC_IN_RAZ_TE_Ctrl          = get_input_register_bit(37)    # Demande de RAZ TE Robot - Contrôle circuits de vide Effectué
+    
+        #---------------------------------------- Écriture Sorties -------------------------------------
+        # Ordres (fin trajectoires)
+        set_output_register_bit(0, System_OR[0])       # NOT USED
+        set_output_register_bit(1, System_OR[1])       # OR1 = Fin Scan piles bacs Vides
+        set_output_register_bit(2, System_OR[2])       # OR2 = Fin Prise bac Vide
+        set_output_register_bit(3, System_OR[3])       # OR3 = Fin Dépose bac Vide
+        set_output_register_bit(4, System_OR[4])
+        set_output_register_bit(5, System_OR[5])
+        set_output_register_bit(6, System_OR[6])       # OR6 = Fin Scan piles bacs Pleins
+        set_output_register_bit(7, System_OR[7])       # OR7 = Fin Prise bac Plein
+        set_output_register_bit(8, System_OR[8])       # OR8 = Fin Dépose bac Plein
+        set_output_register_bit(8, System_OR[9])
+        set_output_register_bit(10, System_OR[10])
+    
+        # Hors Zones
+        set_output_register_bit(32, System_HZ[0])      # NOT USED
+        set_output_register_bit(33, System_HZ[1])      # Hors Zone n°1 = Palette Bacs Vides
+        set_output_register_bit(34, System_HZ[2])      # Hors Zone n°2 = Palette Bacs Pleins
+        set_output_register_bit(35, System_HZ[3])      # Hors Zone n°3 = Convoyeur Oblique
+        set_output_register_bit(36, System_HZ[4])
+        set_output_register_bit(37, System_HZ[5])
+    
+        # Gestion Cycles
+        set_output_register_int(0, System_PLC_OUT_Echo_code_Cycle)         # Échange avec Automate : Sortie Echo code Cycle
+        set_output_register_int(1, System_PLC_OUT_Echo_code_Pos)           # Échange avec Automate : Sortie Echo code Position
+        set_output_register_int(2, System_PLC_OUT_Error_code)              # Échange avec Automate : Sortie Error code
+        set_output_register_int(3, 0)
+        set_output_register_int(4, System_PLC_OUT_Step_Number)             # Échange avec Automate : Sortie Step Number
+        set_output_register_int(5, System_PLC_OUT_Att_Cycle_code)          # Échange avec Automate : Sortie Attente code Cycle
+        set_output_register_int(6, System_PLC_OUT_Life_Int)                # Échange avec Automate : Sortie Int de vie
+        set_output_register_int(7, System_PLC_OUT_Cycle_End)               # Échange avec Automate : Sortie Cycle End
+    
+        # USER Data OUT
+        set_output_register_float(0, System_01E02)                  # Valeur actuelle Mesure Laser
+        set_output_register_float(1, System_Mesure_Pile_V[1])       # Mesure hauteur Pile bacs Vides n°1
+        set_output_register_float(2, System_Mesure_Pile_V[2])       # Mesure hauteur Pile bacs Vides n°2
+        set_output_register_float(3, System_Mesure_Pile_V[3])       # Mesure hauteur Pile bacs Vides n°3
+        set_output_register_float(4, System_Mesure_Pile_V[4])       # Mesure hauteur Pile bacs Vides n°4
+        set_output_register_float(5, 0)
+        set_output_register_float(6, System_Mesure_Pile_P[1])       # Mesure hauteur Pile bacs Pleins n°1
+        set_output_register_float(7, System_Mesure_Pile_P[2])       # Mesure hauteur Pile bacs Pleins n°2
+        set_output_register_float(8, System_Mesure_Pile_P[3])       # Mesure hauteur Pile bacs Pleins n°3
+        set_output_register_float(9, System_Mesure_Pile_P[4])       # Mesure hauteur Pile bacs Pleins n°4
+        set_output_register_float(10, System_Mesure_Pile_P[5])      # Mesure hauteur Pile bacs Pleins n°5
+    
+        set_output_register_int(13, System_Ctrl_Circuits_OK)	# TE Contrôle circuits de vide Effectué
+    
+        # RAZ TE Contrôle Circuits de vide Effectué
+        if System_PLC_IN_RAZ_TE_Ctrl == ON :
+            System_Ctrl_Circuits_OK = 0         # RAZ TE Contrôle Circuits de vide Effectué (demande API)
+    
+        # Vitesse TCP (Outil)
+        Velx        = get_current_velx(DR_BASE)                     # Récupération vitesse cartésienne
+        Vitesse_TCP = sqrt((Velx[0]*Velx[0])+(Velx[1]*Velx[1])+(Velx[2]*Velx[2]))   # Calcul de la Norme du vecteur Vitesse cartésienne
+        set_output_register_float(15, Vitesse_TCP)                  # Vitesse TCP
+    
+        wait(1) #TAUX DE RAFRAICHISSEMENT TROP ELEVE
+    
+    thread_run(EXCHANGE_PLC, loop=True)                     # Démarrage Thread Échanges API
+    #============================================================================================
+    #============================================================================================
+    def READ_INPUTS() :
+        #---------------------------------------- Déclarations --------------------------------------
+        # Récupération variables Système
+        global System_I_Vacc_General                # Entrée digitale Vaccuostat Général
+        global System_I_Vacc_Circuit1               # Entrée digitale Vaccuostat Circuit vide n°1
+        global System_I_Vacc_Circuit2               # Entrée digitale Vaccuostat Circuit vide n°2
+        global System_I_Vacc_Circuit3               # Entrée digitale Vaccuostat Circuit vide n°3
+        global System_TE_Prise                      # Regroupement retours Vaccuostats circuits de vide
+    
+        #---------------------------------------- Lecture Entrées --------------------------------------
+        System_I_Vacc_General = get_digital_input(1)            # Entrée Vaccuostat Général (Niveau de vide atteint)
+        System_I_Vacc_Circuit1 = get_digital_input(2)           # Entrée Vaccuostat Circuit n°1 (Niveau de vide atteint)
+        System_I_Vacc_Circuit2 = get_digital_input(3)           # Entrée Vaccuostat Circuit n°2 (Niveau de vide atteint)
+        System_I_Vacc_Circuit3 = get_digital_input(4)           # Entrée Vaccuostat Circuit n°3 (Niveau de vide atteint)
+    
+        #-------------------------------------- Regroupement Entrées -----------------------------------
+        System_TE_Prise = (System_I_Vacc_Circuit1 or System_I_Vacc_Circuit2 or System_I_Vacc_Circuit3)
+    
+    thread_run(READ_INPUTS, loop=True)                      # Démarrage Thread Lecture entrées
+    #============================================================================================
+    
+    
+    #--------------------------------- Appel Sous-programme Init_Mouvements ---------------------
+    tp_log("Start Init_Mouvements.DRL")
+    
+    # CallNode
+    _alias_sub_name_init_mouvements()
+    # CustomCodeNode
+    move_home(DR_HOME_TARGET_USER)                  # Mouvement vers HOME USER
+    
+    #------------------------ Appel Sous-programme Robot_Mouvements (Appel des trajectoires) -------------------
+    while(1) :
+        tp_log("Start Robot_Mouvements.DRL")
+        robot_mouvements()
+    
+    gLoopCountRev = gLoopCountRev + 1
+    tp_progress_ex(gLoopCountRev, 1)
