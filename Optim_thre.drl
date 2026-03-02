@@ -448,6 +448,7 @@ def init_mouvements():
     set_tcp("Prehenseur")               # Sélection Effecteur (Tool)
     
     #------------------------------------------ Séquence ----------------------------------------
+    _alias_sub_name_read_inputs()
     if System_TE_Prise == OFF :                 # Si préhenseur Vide (aucun retour circuits de vide)
         # Initialisation Sorties Préhenseur
         set_digital_output(1, OFF)              # Electrovanne Vide Général
@@ -534,6 +535,7 @@ def init_mouvements():
     Hauteur_Calib       = 325                                 # Hauteur Z de Calibrage Laser (pour une mesure à 750mm du convoyeur)
     Dist_Calib          = Pos_Actuelle[2] - Hauteur_Calib     # Hauteur Z actuelle - Hauteur Z Calibration
     
+    _alias_sub_name_read_inputs()
     _alias_sub_name_mise_a_echelle_laser()
     if ((System_01E02 < 600) or (System_01E02 > 900)) and System_TE_Prise == OFF :                 # Hauteur mesurée entre Laser et Convoyeur = 850mm
         movel([0,0,-Dist_Calib,0,0,0], ref = DR_BASE, mod = DR_MV_MOD_REL)  # Dégagement relatif de Z - Distance Calibration
@@ -555,11 +557,13 @@ def init_mouvements():
             wait(1)
     
     # Contrôle Vide Général
+    _alias_sub_name_read_inputs()
     if System_I_Vacc_General == OFF and System_TE_Prise == OFF :
         System_PLC_OUT_Error_code = 1               # Error Number
         tp_log("Absence Vide Usine")
         while System_I_Vacc_General == OFF :
             wait(1)
+            _alias_sub_name_read_inputs()
     
     System_PLC_OUT_Error_code = 0                   # Error Number
     System_PLC_OUT_Step_Number = 0                  # Step Number
@@ -586,6 +590,23 @@ def mise_a_echelle_laser():
 
 
 _alias_sub_name_mise_a_echelle_laser = mise_a_echelle_laser
+
+def read_inputs():
+    global System_I_Vacc_General                # Entrée digitale Vaccuostat Général
+    global System_I_Vacc_Circuit1               # Entrée digitale Vaccuostat Circuit vide n°1
+    global System_I_Vacc_Circuit2               # Entrée digitale Vaccuostat Circuit vide n°2
+    global System_I_Vacc_Circuit3               # Entrée digitale Vaccuostat Circuit vide n°3
+    global System_TE_Prise                      # Regroupement retours Vaccuostats circuits de vide
+
+    System_I_Vacc_General = get_digital_input(1)            # Entrée Vaccuostat Général (Niveau de vide atteint)
+    System_I_Vacc_Circuit1 = get_digital_input(2)           # Entrée Vaccuostat Circuit n°1 (Niveau de vide atteint)
+    System_I_Vacc_Circuit2 = get_digital_input(3)           # Entrée Vaccuostat Circuit n°2 (Niveau de vide atteint)
+    System_I_Vacc_Circuit3 = get_digital_input(4)           # Entrée Vaccuostat Circuit n°3 (Niveau de vide atteint)
+
+    System_TE_Prise = (System_I_Vacc_Circuit1 or System_I_Vacc_Circuit2 or System_I_Vacc_Circuit3)
+
+
+_alias_sub_name_read_inputs = read_inputs
 
 _alias_sub_name_init_mouvements = init_mouvements
 
@@ -937,6 +958,7 @@ def scan_pal_vide():
     System_PLC_OUT_Step_Number = 0                          # Step Number
     
     # Vérification état Préhenseur
+    _alias_sub_name_read_inputs()
     while System_TE_Prise == ON :
         System_PLC_OUT_Error_code = 14                      # Error Number
         tp_popup("Scan impossible, Préhenseur non vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
@@ -1108,6 +1130,7 @@ def scan_pal_plein():
     System_PLC_OUT_Step_Number = 0                          # Step Number
     
     # Vérification état Préhenseur
+    _alias_sub_name_read_inputs()
     while System_TE_Prise == ON :
         System_PLC_OUT_Error_code = 14                      # Error Number
         tp_popup("Scan impossible, Préhenseur non vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
@@ -1496,6 +1519,7 @@ def prise_bac_vide():
     System_PLC_OUT_Step_Number = 0                      # Step Number
     
     # Vérification état Préhenseur
+    _alias_sub_name_read_inputs()
     while System_TE_Prise == ON :
         System_PLC_OUT_Error_code = 15                  # Error Number
         tp_popup("Prise impossible, Préhenseur non vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
@@ -1815,6 +1839,7 @@ def prise_bac_plein():
     System_PLC_OUT_Step_Number = 0              # Step Number
     
     # Vérification état Préhenseur
+    _alias_sub_name_read_inputs()
     while System_TE_Prise == ON :
         System_PLC_OUT_Error_code = 15          # Error Number
         tp_popup("Prise impossible, Préhenseur non vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
@@ -1942,6 +1967,7 @@ def depose_bac_vide():
     System_PLC_OUT_Step_Number = 0              # Step Number
     
     # Vérification état Préhenseur
+    _alias_sub_name_read_inputs()
     while System_TE_Prise == OFF :
         System_PLC_OUT_Error_code = 16          # Error Number
         tp_popup("Dépose impossible, Préhenseur vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
@@ -2131,6 +2157,7 @@ def depose_bac_plein():
     System_PLC_OUT_Step_Number = 0                      # Step Number
     
     # Vérification état Préhenseur
+    _alias_sub_name_read_inputs()
     while System_TE_Prise == OFF :
         System_PLC_OUT_Error_code = 16                  # Error Number
         tp_popup("Dépose impossible, Préhenseur vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
@@ -2443,27 +2470,7 @@ while gLoopCountRev < 1:
         wait(1) #TAUX DE RAFRAICHISSEMENT TROP ELEVE
     
     thread_run(EXCHANGE_PLC, loop=True)                     # Démarrage Thread Échanges API
-    #============================================================================================
-    #============================================================================================
-    def READ_INPUTS() :
-        #---------------------------------------- Déclarations --------------------------------------
-        # Récupération variables Système
-        global System_I_Vacc_General                # Entrée digitale Vaccuostat Général
-        global System_I_Vacc_Circuit1               # Entrée digitale Vaccuostat Circuit vide n°1
-        global System_I_Vacc_Circuit2               # Entrée digitale Vaccuostat Circuit vide n°2
-        global System_I_Vacc_Circuit3               # Entrée digitale Vaccuostat Circuit vide n°3
-        global System_TE_Prise                      # Regroupement retours Vaccuostats circuits de vide
-    
-        #---------------------------------------- Lecture Entrées --------------------------------------
-        System_I_Vacc_General = get_digital_input(1)            # Entrée Vaccuostat Général (Niveau de vide atteint)
-        System_I_Vacc_Circuit1 = get_digital_input(2)           # Entrée Vaccuostat Circuit n°1 (Niveau de vide atteint)
-        System_I_Vacc_Circuit2 = get_digital_input(3)           # Entrée Vaccuostat Circuit n°2 (Niveau de vide atteint)
-        System_I_Vacc_Circuit3 = get_digital_input(4)           # Entrée Vaccuostat Circuit n°3 (Niveau de vide atteint)
-    
-        #-------------------------------------- Regroupement Entrées -----------------------------------
-        System_TE_Prise = (System_I_Vacc_Circuit1 or System_I_Vacc_Circuit2 or System_I_Vacc_Circuit3)
-    
-    thread_run(READ_INPUTS, loop=True)                      # Démarrage Thread Lecture entrées
+    # Lecture entrées exécutée à la demande via _alias_sub_name_read_inputs()
     #============================================================================================
     
     
