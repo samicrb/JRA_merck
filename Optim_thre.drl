@@ -448,6 +448,7 @@ def init_mouvements():
     set_tcp("Prehenseur")               # Sélection Effecteur (Tool)
     
     #------------------------------------------ Séquence ----------------------------------------
+    _alias_sub_name_read_inputs()
     if System_TE_Prise == OFF :                 # Si préhenseur Vide (aucun retour circuits de vide)
         # Initialisation Sorties Préhenseur
         set_digital_output(1, OFF)              # Electrovanne Vide Général
@@ -534,6 +535,8 @@ def init_mouvements():
     Hauteur_Calib       = 325                                 # Hauteur Z de Calibrage Laser (pour une mesure à 750mm du convoyeur)
     Dist_Calib          = Pos_Actuelle[2] - Hauteur_Calib     # Hauteur Z actuelle - Hauteur Z Calibration
     
+    _alias_sub_name_read_inputs()
+    _alias_sub_name_mise_a_echelle_laser()
     if ((System_01E02 < 600) or (System_01E02 > 900)) and System_TE_Prise == OFF :                 # Hauteur mesurée entre Laser et Convoyeur = 850mm
         movel([0,0,-Dist_Calib,0,0,0], ref = DR_BASE, mod = DR_MV_MOD_REL)  # Dégagement relatif de Z - Distance Calibration
         wait(2)                             # Stabilisation
@@ -554,16 +557,57 @@ def init_mouvements():
             wait(1)
     
     # Contrôle Vide Général
+    _alias_sub_name_read_inputs()
     if System_I_Vacc_General == OFF and System_TE_Prise == OFF :
         System_PLC_OUT_Error_code = 1               # Error Number
         tp_log("Absence Vide Usine")
         while System_I_Vacc_General == OFF :
             wait(1)
+            _alias_sub_name_read_inputs()
     
     System_PLC_OUT_Error_code = 0                   # Error Number
     System_PLC_OUT_Step_Number = 0                  # Step Number
     
     
+
+def mise_a_echelle_laser():
+    global System_01E02                         # Valeur Laser (en mm)
+
+    Capt_01E02_Val_Brute    = get_analog_input(1)           # Récupération Valeur Laser (en mA)
+    Capt_01E02_Defaut       = get_digital_input(5)          # Récupération Entrée Défaut
+    Capt_01E02_Val_min      = 4.0               # 4 mA
+    Capt_01E02_Val_max      = 20.0              # 20 mA
+    Capt_01E02_Mesure_min   = 200.0             # 200 mm                (Paramètre AnL IL1000)
+    Capt_01E02_Mesure_max   = 999.99            # 999.99 mm             (Paramètre AnH IL1000)
+    Capt_01E02_Offset_USER  = 0                 # Offset de correction
+
+    # Valeur corrigée = Offset USER + Sortie_min + (valeur - entree_min) * (sortie_max - sortie_min) / (entree_max - entree_min)
+    System_01E02 = Capt_01E02_Offset_USER + Capt_01E02_Mesure_min + (Capt_01E02_Val_Brute - Capt_01E02_Val_min) * (Capt_01E02_Mesure_max - Capt_01E02_Mesure_min) / (Capt_01E02_Val_max - Capt_01E02_Val_min)
+
+    # Bornage valeur corrigée (hors plage ou en défaut)
+    if System_01E02 == Capt_01E02_Mesure_min or Capt_01E02_Defaut == ON :
+        System_01E02 = 9999
+
+
+_alias_sub_name_mise_a_echelle_laser = mise_a_echelle_laser
+
+def read_inputs():
+    global System_I_Vacc_General                # Entrée digitale Vaccuostat Général
+    global System_I_Vacc_Circuit1               # Entrée digitale Vaccuostat Circuit vide n°1
+    global System_I_Vacc_Circuit2               # Entrée digitale Vaccuostat Circuit vide n°2
+    global System_I_Vacc_Circuit3               # Entrée digitale Vaccuostat Circuit vide n°3
+    global System_TE_Prise                      # Regroupement retours Vaccuostats circuits de vide
+
+    System_I_Vacc_General = get_digital_input(1)            # Entrée Vaccuostat Général (Niveau de vide atteint)
+    System_I_Vacc_Circuit1 = get_digital_input(2)           # Entrée Vaccuostat Circuit n°1 (Niveau de vide atteint)
+    System_I_Vacc_Circuit2 = get_digital_input(3)           # Entrée Vaccuostat Circuit n°2 (Niveau de vide atteint)
+    System_I_Vacc_Circuit3 = get_digital_input(4)           # Entrée Vaccuostat Circuit n°3 (Niveau de vide atteint)
+
+    System_TE_Prise = (System_I_Vacc_Circuit1 or System_I_Vacc_Circuit2 or System_I_Vacc_Circuit3)
+
+
+_alias_sub_name_read_inputs = read_inputs
+
 _alias_sub_name_init_mouvements = init_mouvements
 
 def robot_mouvements():
@@ -893,14 +937,17 @@ def scan_pal_vide():
         wait(0.5)
     
         # Descente si mesure Hors plage (pile trop basse)
+        _alias_sub_name_mise_a_echelle_laser()
         if System_01E02 == 9999 :
             movel(Relatif_Mesure2_Descente, ref = DR_BASE, mod = DR_MV_MOD_REL)
             wait(0.5)
+            _alias_sub_name_mise_a_echelle_laser()
             Mesure_Laser = System_01E02 + abs(Relatif_Mesure2_Descente[2])
             movel(Relatif_Mesure2_Montee, ref = DR_BASE, mod = DR_MV_MOD_REL)
         else :
             while System_01E02 == 200.0 or System_01E02 == 800.0 :       # BUG : Piège pour empêcher de relever une valeur NOK du Laser
                 wait(0.1)
+                _alias_sub_name_mise_a_echelle_laser()
             Mesure_Laser = System_01E02
     
         return Mesure_Laser
@@ -911,6 +958,7 @@ def scan_pal_vide():
     System_PLC_OUT_Step_Number = 0                          # Step Number
     
     # Vérification état Préhenseur
+    _alias_sub_name_read_inputs()
     while System_TE_Prise == ON :
         System_PLC_OUT_Error_code = 14                      # Error Number
         tp_popup("Scan impossible, Préhenseur non vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
@@ -1057,14 +1105,17 @@ def scan_pal_plein():
         wait(0.5)
     
         # Descente si mesure Hors plage (pile trop basse)
+        _alias_sub_name_mise_a_echelle_laser()
         if System_01E02 == 9999 :
             movel(Relatif_Mesure2_Descente, ref = DR_BASE, mod = DR_MV_MOD_REL)
             wait(0.5)
+            _alias_sub_name_mise_a_echelle_laser()
             Mesure_Laser = System_01E02 + abs(Relatif_Mesure2_Descente[2])
             movel(Relatif_Mesure2_Montee, ref = DR_BASE, mod = DR_MV_MOD_REL)
         else :
             while System_01E02 == 200.0 or System_01E02 == 800.0 :       # BUG : Piège pour empêcher de relever une valeur NOK du Laser
                 wait(0.1)
+                _alias_sub_name_mise_a_echelle_laser()
             Mesure_Laser = System_01E02
     
         # Correction valeur mesurée si Pile Vide (pour dépose sur palette)
@@ -1079,6 +1130,7 @@ def scan_pal_plein():
     System_PLC_OUT_Step_Number = 0                          # Step Number
     
     # Vérification état Préhenseur
+    _alias_sub_name_read_inputs()
     while System_TE_Prise == ON :
         System_PLC_OUT_Error_code = 14                      # Error Number
         tp_popup("Scan impossible, Préhenseur non vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
@@ -1321,7 +1373,9 @@ def prise_bac_vide():
         amovel(Relatif_Descente, vel = 50, ref = DR_BASE, mod = DR_MV_MOD_REL)
     
         #Boucle scutation valeur Laser
+        _alias_sub_name_mise_a_echelle_laser()
         while System_01E02 > Dist_recalage and System_01E02 != 9999 :
+            _alias_sub_name_mise_a_echelle_laser()
             if check_motion() == 0 :                                    # 0 = Arrêté / 1 = en calcul / 2 = en mouvement
                 # Si point atteint : Fond de bac non détecté
                 System_PLC_OUT_Error_code = 6                           # Error Number
@@ -1348,7 +1402,9 @@ def prise_bac_vide():
         amovel(Relatif_Async, vel = 50, ref = DR_BASE, mod = DR_MV_MOD_REL)
     
         #Boucle scutation valeur Laser
+        _alias_sub_name_mise_a_echelle_laser()
         while System_01E02 > Detect_bord_bac and System_01E02 != 9999 :
+            _alias_sub_name_mise_a_echelle_laser()
             if check_motion() == 0 :        # 0 = Arrêté / 1 = en calcul / 2 = en mouvement
                 # Si point atteint : Bord de bac non détecté
                 System_PLC_OUT_Error_code = 7                           # Error Number
@@ -1428,12 +1484,14 @@ def prise_bac_vide():
         Dist_Asynch     = abs(Z_Palette - Pos_actu[2])  # Distance de recherche Hauteur Pile
     
         # Approche Rapide de la pile
+        _alias_sub_name_mise_a_echelle_laser()
         if System_01E02 > Rech_DIR_Rapide :
             # Démarrage recherche Rapide Hauteur Pile (mouvement asynchrone, point à ne pas atteindre)
             amovel([0,0,-Dist_Asynch,0,0,0], vel = 150, ref = DR_BASE, mod = DR_MV_MOD_REL)
             #Boucle scutation valeur Laser
             while System_01E02 > Rech_DIR_Rapide or (System_01E02 == 200 or System_01E02 == 9999) :
                 wait(0.1)
+                _alias_sub_name_mise_a_echelle_laser()
             stop(DR_SSTOP)
     
         # Récupération position actuelle pour distance asynchrone
@@ -1442,12 +1500,14 @@ def prise_bac_vide():
         Dist_Asynch     = abs(Z_Palette - Pos_actu[2])  # Distance de recherche Hauteur Pile
     
         # Approche Lente de la pile
+        _alias_sub_name_mise_a_echelle_laser()
         if System_01E02 > Rech_DIR_Lent :
             # Démarrage recherche Lente Hauteur Pile (mouvement asynchrone, point à ne pas atteindre)
             amovel([0,0,-Dist_Asynch,0,0,0], vel = 50, ref = DR_BASE, mod = DR_MV_MOD_REL)
             #Boucle scutation valeur Laser
             while System_01E02 > Rech_DIR_Lent or (System_01E02 == 200 or System_01E02 == 9999) :
                 wait(0.1)
+                _alias_sub_name_mise_a_echelle_laser()
             stop(DR_SSTOP)
     
         # Approche du Fond du bac
@@ -1459,6 +1519,7 @@ def prise_bac_vide():
     System_PLC_OUT_Step_Number = 0                      # Step Number
     
     # Vérification état Préhenseur
+    _alias_sub_name_read_inputs()
     while System_TE_Prise == ON :
         System_PLC_OUT_Error_code = 15                  # Error Number
         tp_popup("Prise impossible, Préhenseur non vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
@@ -1778,6 +1839,7 @@ def prise_bac_plein():
     System_PLC_OUT_Step_Number = 0              # Step Number
     
     # Vérification état Préhenseur
+    _alias_sub_name_read_inputs()
     while System_TE_Prise == ON :
         System_PLC_OUT_Error_code = 15          # Error Number
         tp_popup("Prise impossible, Préhenseur non vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
@@ -1797,11 +1859,14 @@ def prise_bac_plein():
     movel(Pos_Controle_Prise, ra= DR_MV_RA_DUPLICATE, ref = DR_BASE, mod = DR_MV_MOD_ABS)
     
     # Vérification Bac Fermé
+    _alias_sub_name_mise_a_echelle_laser()
     while System_01E02 < (Distance_Bac_Ferme - Tolerance_Dist) or System_01E02 > (Distance_Bac_Ferme + Tolerance_Dist) :
+        _alias_sub_name_mise_a_echelle_laser()
         System_PLC_OUT_Error_code = 11          # Error Number
         #tp_popup("Bac plein Non Fermé pour prise", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
         while System_PLC_IN_Ack == False :
             wait(0.1)
+            _alias_sub_name_mise_a_echelle_laser()
     System_PLC_OUT_Error_code = 0               # Error Number
     
     # Approche Bac Plein
@@ -1902,6 +1967,7 @@ def depose_bac_vide():
     System_PLC_OUT_Step_Number = 0              # Step Number
     
     # Vérification état Préhenseur
+    _alias_sub_name_read_inputs()
     while System_TE_Prise == OFF :
         System_PLC_OUT_Error_code = 16          # Error Number
         tp_popup("Dépose impossible, Préhenseur vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
@@ -2091,6 +2157,7 @@ def depose_bac_plein():
     System_PLC_OUT_Step_Number = 0                      # Step Number
     
     # Vérification état Préhenseur
+    _alias_sub_name_read_inputs()
     while System_TE_Prise == OFF :
         System_PLC_OUT_Error_code = 16                  # Error Number
         tp_popup("Dépose impossible, Préhenseur vide", DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
@@ -2280,37 +2347,7 @@ while gLoopCountRev < 1:
     
     
     #-------------------------------- Démarrage des THREAD (Tâches de fond) ---------------------
-    #============================================================================================
-    #============================================================================================
-    def MISE_A_ECHELLE_LASER() :
-        #---------------------------------------- Déclarations --------------------------------------
-        # Récupération variables Système
-        global System_01E02                         # Valeur Laser (en mm)
-    
-        #---------------------------------------- Paramétrage --------------------------------------
-        Capt_01E02_Val_Brute    = get_analog_input(1)           # Récupération Valeur Laser (en mA)
-        Capt_01E02_Defaut       = get_digital_input(5)          # Récupération Entrée Défaut
-        Capt_01E02_Val_min      = 4.0               # 4 mA
-        Capt_01E02_Val_max      = 20.0              # 20 mA
-        Capt_01E02_Mesure_min   = 200.0             # 200 mm                (Paramètre AnL IL1000)
-        Capt_01E02_Mesure_max   = 999.99            # 999.99 mm             (Paramètre AnH IL1000)
-        Capt_01E02_Offset_USER  = 0                 # Offset de correction
-    
-        #------------------------------------- Mise à l'échelle ------------------------------------
-        # Valeur corrigée = Offset USER + Sortie_min + (valeur - entree_min) * (sortie_max - sortie_min) / (entree_max - entree_min)
-        System_01E02 = Capt_01E02_Offset_USER + Capt_01E02_Mesure_min + (Capt_01E02_Val_Brute - Capt_01E02_Val_min) * (Capt_01E02_Mesure_max - Capt_01E02_Mesure_min) / (Capt_01E02_Val_max - Capt_01E02_Val_min)
-    
-        # Bornage valeur corrigée (hors plage ou en défaut)
-        if System_01E02 == Capt_01E02_Mesure_min or Capt_01E02_Defaut == ON :
-            System_01E02 = 9999
-    
-        '''
-        # Pop-up de vérification Mesure / Mise à l'échelle
-        tp_popup("Valeur Laser Brute    = " +str(Capt_01E02_Val_Brute), DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
-        tp_popup("Valeur Laser Corrigee = " +str(System_01E02), DR_PM_MESSAGE, DR_TP_POPUP_BUTTON_TYPE_STOP_RESUME)
-        '''
-    
-    thread_run(MISE_A_ECHELLE_LASER, loop=True)             # Démarrage Thread Mise à l'échelle LASER
+    # Mise à l'échelle laser exécutée à la demande via _alias_sub_name_mise_a_echelle_laser()
     #============================================================================================
     #============================================================================================
     def EXCHANGE_PLC() :
@@ -2433,27 +2470,7 @@ while gLoopCountRev < 1:
         wait(1) #TAUX DE RAFRAICHISSEMENT TROP ELEVE
     
     thread_run(EXCHANGE_PLC, loop=True)                     # Démarrage Thread Échanges API
-    #============================================================================================
-    #============================================================================================
-    def READ_INPUTS() :
-        #---------------------------------------- Déclarations --------------------------------------
-        # Récupération variables Système
-        global System_I_Vacc_General                # Entrée digitale Vaccuostat Général
-        global System_I_Vacc_Circuit1               # Entrée digitale Vaccuostat Circuit vide n°1
-        global System_I_Vacc_Circuit2               # Entrée digitale Vaccuostat Circuit vide n°2
-        global System_I_Vacc_Circuit3               # Entrée digitale Vaccuostat Circuit vide n°3
-        global System_TE_Prise                      # Regroupement retours Vaccuostats circuits de vide
-    
-        #---------------------------------------- Lecture Entrées --------------------------------------
-        System_I_Vacc_General = get_digital_input(1)            # Entrée Vaccuostat Général (Niveau de vide atteint)
-        System_I_Vacc_Circuit1 = get_digital_input(2)           # Entrée Vaccuostat Circuit n°1 (Niveau de vide atteint)
-        System_I_Vacc_Circuit2 = get_digital_input(3)           # Entrée Vaccuostat Circuit n°2 (Niveau de vide atteint)
-        System_I_Vacc_Circuit3 = get_digital_input(4)           # Entrée Vaccuostat Circuit n°3 (Niveau de vide atteint)
-    
-        #-------------------------------------- Regroupement Entrées -----------------------------------
-        System_TE_Prise = (System_I_Vacc_Circuit1 or System_I_Vacc_Circuit2 or System_I_Vacc_Circuit3)
-    
-    thread_run(READ_INPUTS, loop=True)                      # Démarrage Thread Lecture entrées
+    # Lecture entrées exécutée à la demande via _alias_sub_name_read_inputs()
     #============================================================================================
     
     
